@@ -41,6 +41,12 @@ jobs:
         uses: mikepenz/release-changelog-builder-action@v5
         with:
           mode: "COMMIT"
+          configurationJson: |
+            {
+              "tag_resolver": {
+                "method": "sort",
+              }
+            }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
