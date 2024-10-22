@@ -23,7 +23,7 @@ jobs:
         uses: czietz/action-automatic-releases@latest
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          automatic_release_tag: ${{ env.MY_DATE }}
+          automatic_release_tag: "20241022-111131"
           prerelease: false
           title: ${{ env.MY_DATE }}
           files: |
