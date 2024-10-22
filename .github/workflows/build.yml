@@ -19,13 +19,16 @@ jobs:
           TAG_NAME: nightly-tag-${{ env.MY_DATE }}
           RELEASE_NAME: nightly-release-${{ env.MY_DATE }}
 
-      - name: Create latest build
-        uses: czietz/action-automatic-releases@latest
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          automatic_release_tag: "20241022-111131"
-          prerelease: false
-          title: ${{ env.MY_DATE }}
-          files: |
-            *.zip
-            *.7z
+      # - name: Create latest build
+      #   uses: czietz/action-automatic-releases@latest
+      #   with:
+      #     repo_token: ${{ secrets.GITHUB_TOKEN }}
+      #     automatic_release_tag: "20241022-111131"
+      #     prerelease: false
+      #     title: ${{ env.MY_DATE }}
+      #     files: |
+      #       *.zip
+      #       *.7z
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
