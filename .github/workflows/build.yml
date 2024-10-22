@@ -30,10 +30,17 @@ jobs:
       #       *.zip
       #       *.7z
 
+      - name: 'Build Changelog'
+        id: build_changelog
+        uses: mikepenz/release-changelog-builder-action@v5
+        with:
+            mode: "COMMIT"
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.MY_DATE }}
           # generate_release_notes: true
           make_latest: true
-      
+          body: ${{steps.build_changelog.outputs.changelog}}
+          
