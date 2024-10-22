@@ -34,8 +34,9 @@ jobs:
         id: build_changelog
         uses: mikepenz/release-changelog-builder-action@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           mode: "COMMIT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release
         uses: softprops/action-gh-release@v2
