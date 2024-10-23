@@ -3,10 +3,76 @@ name: build
 on: [workflow_dispatch]
 
 jobs:
+
+
+
+
+
+  windows-msys:
+    name: ${{ matrix.config }} Windows ${{ matrix.arch }}
+    runs-on: windows-2019
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64]
+        cc: [gcc]
+        include:
+          # - arch: x86
+          #   msystem: MINGW32
+          #   prefix: mingw-w64-i686
+
+          - arch: x86_64
+            msystem: MINGW64
+            prefix: mingw-w64-x86_64
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+    - uses: msys2/setup-msys2@v2
+      with:
+        install: ${{ matrix.prefix }}-qt5-base ${{ matrix.prefix }}-libxml2 git
+        msystem: ${{ matrix.msystem }}
+        path-type: minimal
+        release: false
+        update: false
+
+    - name: Build
+      run: |
+        7z -version
+        mkdir -p install/settings
+        mkdir -p install/bsettings
+        echo > install/settings/.DUMMMY
+        echo > install/bsettings/DUMMMY
+        7z a Windows-${{ matrix.arch }}.zip ./install/*
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: Windows-${{ matrix.arch }}
+        path: Windows-${{ matrix.arch }}.zip
+        if-no-files-found: error
+
+
+
+
+
+  
   create-testing:
     if: github.ref == 'refs/heads/master' && ( github.event_name == 'push' || github.event_name == 'workflow_dispatch' )
     runs-on: ubuntu-latest
     steps:
+
+
+
+
+      - name: Create binary archives
+        shell: bash
+        run: |
+          mv Windows-x86_64/Windows-x86_64.zip netradiant-custom-$(date +%Y%m%d)-windows-x86_64.zip
+
+
+
 
       - name: Get current date
         id: date
