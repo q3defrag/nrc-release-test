@@ -65,7 +65,8 @@ jobs:
 
 
 
-
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
       - name: Create binary archives
         shell: bash
         run: |
