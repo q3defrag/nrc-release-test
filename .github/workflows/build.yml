@@ -25,7 +25,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           automatic_release_tag: ${{ env.MY_DATE }}
           prerelease: false
-          title: ${{ env.MY_DATE }}
+          title: Latest Build
           files: |
             *.zip
             *.7z
