@@ -32,7 +32,7 @@ jobs:
     steps:
     - uses: msys2/setup-msys2@v2
       with:
-        install: ${{ matrix.prefix }}-qt5-base ${{ matrix.prefix }}-libxml2 git
+        install: ${{ matrix.prefix }}-qt5-base ${{ matrix.prefix }}-libxml2 git p7zip
         msystem: ${{ matrix.msystem }}
         path-type: minimal
         release: false
@@ -60,6 +60,7 @@ jobs:
   
   create-testing:
     if: github.ref == 'refs/heads/master' && ( github.event_name == 'push' || github.event_name == 'workflow_dispatch' )
+    needs: [windows-msys]
     runs-on: ubuntu-latest
     steps:
 
