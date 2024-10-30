@@ -100,7 +100,7 @@ static void SwapBSPFile(){
 			const shaderInfo_t *si = ShaderInfoForShader( shader.shader );
 			if ( !strEmptyOrNull( si->remapShader ) ) {
 				// copy and clear the rest of memory // check for overflow by String64
-				const auto remap = String64()( si->remapShader );
+				const String64 remap( si->remapShader );
 				strncpy( shader.shader, remap, sizeof( shader.shader ) );
 			}
 		}
@@ -227,6 +227,7 @@ void WriteBSPFile( const char *filename ){
 	char tempname[ 1024 ];
 	time_t tm;
 
+	Sys_Printf( "Writing %s\n", filename );
 
 	/* dummy check */
 	if ( g_game == NULL || g_game->write == NULL ) {
@@ -292,7 +293,7 @@ void PrintBSPFileSizes(){
 	            bspNodes.size(), bspNodes.size() * sizeof( bspNodes[0] ) );
 	Sys_Printf( "%9zu leafs         %9zu\n",
 	            bspLeafs.size(), bspLeafs.size() * sizeof( bspLeafs[0] ) );
-	Sys_Printf( "%zu leafsurfaces  %zu\n",
+	Sys_Printf( "%9zu leafsurfaces  %9zu\n",
 	            bspLeafSurfaces.size(), bspLeafSurfaces.size() * sizeof( bspLeafSurfaces[0] ) );
 	Sys_Printf( "%9zu leafbrushes   %9zu\n",
 	            bspLeafBrushes.size(), bspLeafBrushes.size() * sizeof( bspLeafBrushes[0] ) );
@@ -418,7 +419,7 @@ void ParseEntities(){
  * must be called before UnparseEntities
  */
 void InjectCommandLine( const char *stage, const std::vector<const char *>& args ){
-	auto str = StringOutputStream( 256 )( entities[ 0 ].valueForKey( "_q3map2_cmdline" ) ); // read previousCommandLine
+	auto str = StringStream( entities[ 0 ].valueForKey( "_q3map2_cmdline" ) ); // read previousCommandLine
 	if( !str.empty() )
 		str << "; ";
 
@@ -445,6 +446,13 @@ void InjectCommandLine( const char *stage, const std::vector<const char *>& args
 void UnparseEntities(){
 	StringOutputStream data( 8192 );
 
+	/* -keepmodels option: force misc_models to be kept and ignore what the map file says */
+	if ( keepModels )
+		entities[0].setKeyValue( "_keepModels", "1" ); // -keepmodels is -bsp option; save key in worldspawn to pass it to the next stages
+
+	/* determine if we keep misc_models in the bsp */
+	entities[ 0 ].read_keyvalue( keepModels, "_keepModels" );
+
 	/* run through entity list */
 	for ( std::size_t i = 0; i < numBSPEntities && i < entities.size(); ++i )
 	{
@@ -455,7 +463,7 @@ void UnparseEntities(){
 		}
 		/* ydnar: certain entities get stripped from bsp file */
 		const char *classname = e.classname();
-		if ( striEqual( classname, "misc_model" ) ||
+		if ( ( striEqual( classname, "misc_model" ) && !keepModels ) ||
 		     striEqual( classname, "_decal" ) ||
 		     striEqual( classname, "_skybox" ) ) {
 			continue;

@@ -30,6 +30,7 @@
 
 /* dependencies */
 #include "q3map2.h"
+#include "bspfile_rbsp.h"
 
 
 
@@ -55,8 +56,14 @@ static void ExportEntities(){
 		return;
 	}
 
+	if( g_game->load == LoadRBSPFile ){ // intent here is to make RBSP specific stuff usable for entity modding with -onlyents
+		ParseEntities();
+		UnSetLightStyles();
+		UnparseEntities();
+	}
+
 	/* write it */
-	auto filename = StringOutputStream( 256 )( PathExtensionless( source ), ".ent" );
+	const auto filename = StringStream( PathExtensionless( source ), ".ent" );
 	Sys_Printf( "Writing %s\n", filename.c_str() );
 	Sys_FPrintf( SYS_VRB, "(%zu bytes)\n", bspEntData.size() );
 	FILE *file = SafeOpenWrite( filename, "wt" );

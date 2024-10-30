@@ -23,7 +23,6 @@
 #include "LoadPortalFileDialog.h"
 
 #include "stream/stringstream.h"
-#include "convert.h"
 #include "os/path.h"
 
 #include "qerplugin.h"
@@ -52,7 +51,7 @@ bool DoLoadPortalFileDialog(){
 		auto vbox = new QVBoxLayout( &dialog );
 		{
 			vbox->addWidget( line = new QLineEdit );
-			auto button = line->addAction( QApplication::style()->standardIcon( QStyle::SP_FileDialogStart ), QLineEdit::ActionPosition::TrailingPosition );
+			auto button = line->addAction( QApplication::style()->standardIcon( QStyle::SP_DialogOpenButton ), QLineEdit::ActionPosition::TrailingPosition );
 			QObject::connect( button, &QAction::triggered, [line](){
 				if ( const char* filename = GlobalRadiant().m_pfnFileDialog( g_pRadiantWnd, true, "Locate portal (.prt) file", line->text().toLatin1().constData(), 0, true, false, false ) )
 					line->setText( filename );
@@ -71,7 +70,7 @@ bool DoLoadPortalFileDialog(){
 	}
 
 
-	portals.fn = StringOutputStream( 256 )( PathExtensionless( GlobalRadiant().getMapName() ), ".prt" );
+	portals.fn = StringStream( PathExtensionless( GlobalRadiant().getMapName() ), ".prt" );
 
 	line->setText( portals.fn.c_str() );
 	check3d->setChecked( portals.show_3d );

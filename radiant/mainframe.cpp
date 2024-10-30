@@ -175,14 +175,12 @@ void HomePaths_Realise(){
 			StringOutputStream path( 256 );
 
 #if defined( __APPLE__ )
-			path.clear();
-			path << DirectoryCleaned( g_get_home_dir() ) << "Library/Application Support" << ( prefix + 1 ) << "/";
-			if ( file_is_directory( path.c_str() ) ) {
-				g_qeglobals.m_userEnginePath = path.c_str();
+			path( DirectoryCleaned( g_get_home_dir() ), "Library/Application Support", ( prefix + 1 ), '/' );
+			if ( file_is_directory( path ) ) {
+				g_qeglobals.m_userEnginePath = path;
 				break;
 			}
-			path.clear();
-			path << DirectoryCleaned( g_get_home_dir() ) << prefix << "/";
+			path( DirectoryCleaned( g_get_home_dir() ), prefix, '/' );
 #endif
 
 #if defined( WIN32 )
@@ -200,10 +198,9 @@ void HomePaths_Realise(){
 				memset( mydocsdir, 0, sizeof( mydocsdir ) );
 				wcstombs( mydocsdir, mydocsdirw, sizeof( mydocsdir ) - 1 );
 				CoTaskMemFree( mydocsdirw );
-				path.clear();
-				path << DirectoryCleaned( mydocsdir ) << ( prefix + 1 ) << "/";
-				if ( file_is_directory( path.c_str() ) ) {
-					g_qeglobals.m_userEnginePath = path.c_str();
+				path( DirectoryCleaned( mydocsdir ), ( prefix + 1 ), '/' );
+				if ( file_is_directory( path ) ) {
+					g_qeglobals.m_userEnginePath = path;
 					CoUninitialize();
 					FreeLibrary( shfolder );
 					break;
@@ -214,20 +211,18 @@ void HomePaths_Realise(){
 				FreeLibrary( shfolder );
 			}
 			if ( SUCCEEDED( SHGetFolderPath( NULL, CSIDL_PERSONAL, NULL, 0, mydocsdir ) ) ) {
-				path.clear();
-				path << DirectoryCleaned( mydocsdir ) << "My Games/" << ( prefix + 1 ) << "/";
+				path( DirectoryCleaned( mydocsdir ), "My Games/", ( prefix + 1 ), '/' );
 				// win32: only add it if it already exists
-				if ( file_is_directory( path.c_str() ) ) {
-					g_qeglobals.m_userEnginePath = path.c_str();
+				if ( file_is_directory( path ) ) {
+					g_qeglobals.m_userEnginePath = path;
 					break;
 				}
 			}
 #endif
 
 #if defined( POSIX )
-			path.clear();
-			path << DirectoryCleaned( g_get_home_dir() ) << prefix << "/";
-			g_qeglobals.m_userEnginePath = path.c_str();
+			path( DirectoryCleaned( g_get_home_dir() ), prefix, '/' );
+			g_qeglobals.m_userEnginePath = path;
 			break;
 #endif
 		}
@@ -238,11 +233,7 @@ void HomePaths_Realise(){
 
 	Q_mkdir( g_qeglobals.m_userEnginePath.c_str() );
 
-	{
-		StringOutputStream path( 256 );
-		path << g_qeglobals.m_userEnginePath << gamename_get() << '/';
-		g_qeglobals.m_userGamePath = path.c_str();
-	}
+	g_qeglobals.m_userGamePath = StringStream( g_qeglobals.m_userEnginePath, gamename_get(), '/' );
 	ASSERT_MESSAGE( !g_qeglobals.m_userGamePath.empty(), "HomePaths_Realise: user-game-path is empty" );
 	Q_mkdir( g_qeglobals.m_userGamePath.c_str() );
 }
@@ -319,9 +310,19 @@ void EnginePath_Unrealise(){
 	}
 }
 
+static CopiedString g_installedDevFilesPath; // track last engine path, where dev files installation occured, to prompt again when changed
+
+static void installDevFiles(){
+	if( !path_equal( g_strEnginePath.c_str(), g_installedDevFilesPath.c_str() ) ){
+		ASSERT_MESSAGE( g_enginepath_unrealised != 0, "installDevFiles: engine path realised" );
+		DoInstallDevFilesDlg( g_strEnginePath.c_str() );
+		g_installedDevFilesPath = g_strEnginePath;
+	}
+}
+
 void setEnginePath( CopiedString& self, const char* value ){
-	const auto buffer = StringOutputStream( 256 )( DirectoryCleaned( value ) );
-	if ( !path_equal( buffer.c_str(), self.c_str() ) ) {
+	const auto buffer = StringStream( DirectoryCleaned( value ) );
+	if ( !path_equal( buffer, self.c_str() ) ) {
 #if 0
 		while ( !ConfirmModified( "Paths Changed" ) )
 		{
@@ -340,7 +341,9 @@ void setEnginePath( CopiedString& self, const char* value ){
 
 		EnginePath_Unrealise();
 
-		self = buffer.c_str();
+		self = buffer;
+
+		installDevFiles();
 
 		EnginePath_Realise();
 	}
@@ -350,10 +353,10 @@ typedef ReferenceCaller1<CopiedString, const char*, setEnginePath> EnginePathImp
 
 // Extra Resource Path
 
-CopiedString g_strExtraResourcePath;
+std::array<CopiedString, 5> g_strExtraResourcePaths;
 
-const char* ExtraResourcePath_get(){
-	return g_strExtraResourcePath.c_str();
+const std::array<CopiedString, 5>& ExtraResourcePaths_get(){
+	return g_strExtraResourcePaths;
 }
 
 
@@ -369,9 +372,7 @@ const char* AppPath_get(){
 const char* LocalRcPath_get(){
 	static CopiedString rc_path;
 	if ( rc_path.empty() ) {
-		StringOutputStream stream( 256 );
-		stream << GlobalRadiant().getSettingsPath() << g_pGameDescription->mGameFile << "/";
-		rc_path = stream.c_str();
+		rc_path = StringStream( GlobalRadiant().getSettingsPath(), g_pGameDescription->mGameFile, '/' );
 	}
 	return rc_path.c_str();
 }
@@ -409,10 +410,11 @@ void Paths_constructPreferences( PreferencesPage& page ){
 void Paths_constructPage( PreferenceGroup& group ){
 	PreferencesPage page( group.createPage( "Paths", "Path Settings" ) );
 	Paths_constructPreferences( page );
-	page.appendPathEntry( "Extra Resource Path", true,
-	                      StringImportCallback( EnginePathImportCaller( g_strExtraResourcePath ) ),
-	                      StringExportCallback( StringExportCaller( g_strExtraResourcePath ) )
-	                    );
+	for( auto& extraPath : g_strExtraResourcePaths )
+		page.appendPathEntry( "Extra Resource Path", true,
+		                      StringImportCallback( EnginePathImportCaller( extraPath ) ),
+		                      StringExportCallback( StringExportCaller( extraPath ) )
+		                    );
 
 }
 void Paths_registerPreferencesPage(){
@@ -446,8 +448,7 @@ public:
 #else
 #error "unsupported platform"
 #endif
-				StringOutputStream text( 256 );
-				text << "Select directory, where game executable sits (typically \"" << engine << "\")\n";
+				const auto text = StringStream( "Select directory, where game executable sits (typically ", makeQuoted( engine ), ")\n" );
 				grid->addWidget( new QLabel( text.c_str() ), 0, 0, 1, 2 );
 			}
 			{
@@ -469,10 +470,12 @@ static bool g_strEnginePath_was_empty_1st_start = false;
 
 void EnginePath_verify(){
 	if ( !file_exists( g_strEnginePath.c_str() ) || g_strEnginePath_was_empty_1st_start ) {
+		g_installedDevFilesPath = ""; // trigger install for non existing engine path case
 		g_PathsDialog.Create( nullptr );
 		g_PathsDialog.DoModal();
 		g_PathsDialog.Destroy();
 	}
+	installDevFiles(); // try this anytime, as engine path may be set via command line or -gamedetect
 }
 
 namespace
@@ -563,16 +566,10 @@ void Radiant_loadModules( const char* path ){
 }
 
 void Radiant_loadModulesFromRoot( const char* directory ){
-	{
-		StringOutputStream path( 256 );
-		path << directory << g_pluginsDir;
-		Radiant_loadModules( path.c_str() );
-	}
+	Radiant_loadModules( StringStream( directory, g_pluginsDir ) );
 
 	if ( !string_equal( g_pluginsDir, g_modulesDir ) ) {
-		StringOutputStream path( 256 );
-		path << directory << g_modulesDir;
-		Radiant_loadModules( path.c_str() );
+		Radiant_loadModules( StringStream( directory, g_modulesDir ) );
 	}
 }
 
@@ -657,11 +654,10 @@ extern char **environ;
 #endif
 void Radiant_Restart(){
 	if( ConfirmModified( "Restart Radiant" ) ){
-		StringOutputStream mapname;
-		mapname << "\"" << Map_Name( g_map ) << "\"";
+		const auto mapname = StringStream( makeQuoted( Map_Name( g_map ) ) );
 
 		char *argv[] = { string_clone( environment_get_app_filepath() ),
-	                     Map_Unnamed( g_map )? NULL : string_clone( mapname.c_str() ),
+	                     Map_Unnamed( g_map )? NULL : string_clone( mapname ),
 	                     NULL };
 #ifdef WIN32
 		const int status = !_spawnv( P_NOWAIT, argv[0], argv );
@@ -705,16 +701,14 @@ void OpenUpdateURL(){
 #endif
 	URL << "&Version_dlup=" RADIANT_VERSION;
 	g_GamesDialog.AddPacksURL( URL );
-	OpenURL( URL.c_str() );
+	OpenURL( URL );
 #endif
 }
 
 // open the Q3Rad manual
 void OpenHelpURL(){
 	// at least on win32, AppPath + "docs/index.html"
-	StringOutputStream help( 256 );
-	help << AppPath_get() << "docs/index.html";
-	OpenURL( help.c_str() );
+	OpenURL( StringStream( AppPath_get(), "docs/index.html" ) );
 }
 
 void OpenBugReportURL(){
@@ -1062,7 +1056,7 @@ void create_view_menu( QMenuBar *menubar, MainFrame::EViewStyle style ){
 
 		create_menu_item_with_mnemonic( submenu, "&Off", "RegionOff" );
 		create_menu_item_with_mnemonic( submenu, "&Set XY", "RegionSetXY" );
-		create_menu_item_with_mnemonic( submenu, "Set _Brush", "RegionSetBrush" );
+		create_menu_item_with_mnemonic( submenu, "Set &Brush", "RegionSetBrush" );
 		create_check_menu_item_with_mnemonic( submenu, "Set Se&lection", "RegionSetSelection" );
 	}
 
@@ -1406,7 +1400,7 @@ void create_main_toolbar( QToolBar *toolbar,  MainFrame::EViewStyle style ){
 	Manipulators_constructToolbar( toolbar );
 	toolbar->addSeparator();
 
-	if ( !string_empty( g_pGameDescription->getKeyValue( "no_patch" ) ) ) {
+	if ( !string_equal( g_pGameDescription->getKeyValue( "no_patch" ), "1" ) ) {
 		Patch_constructToolbar( toolbar );
 		toolbar->addSeparator();
 	}
@@ -1447,7 +1441,7 @@ void create_main_statusbar( QStatusBar *statusbar, QLabel *pStatusLabel[c_status
 			QHBoxLayout *hbox = new QHBoxLayout( widget );
 			hbox->setMargin( 0 );
 			statusbar->addPermanentWidget( widget, 0 );
-			const char* imgs[3] = { "status_brush.png", "patch_wireframe.png", "status_entiy.png" };
+			const char* imgs[3] = { "status_brush.png", "patch_wireframe.png", "status_entity.png" };
 			for( ; i < c_status_brushcount + 3; ++i ){
 				QLabel *label = new QLabel();
 				label->setPixmap( new_local_image( imgs[i - c_status_brushcount] ) );
@@ -1626,16 +1620,14 @@ void hide_splash(){
 
 
 void user_shortcuts_init(){
-	StringOutputStream path( 256 );
-	path << SettingsPath_get() << g_pGameDescription->mGameFile << '/';
-	LoadCommandMap( path.c_str() );
-	SaveCommandMap( path.c_str() );
+	const auto path = StringStream( SettingsPath_get(), g_pGameDescription->mGameFile, '/' );
+	LoadCommandMap( path );
+	SaveCommandMap( path );
 }
 
 void user_shortcuts_save(){
-	StringOutputStream path( 256 );
-	path << SettingsPath_get() << g_pGameDescription->mGameFile << '/';
-	SaveCommandMap( path.c_str() );
+	const auto path = StringStream( SettingsPath_get(), g_pGameDescription->mGameFile, '/' );
+	SaveCommandMap( path );
 }
 
 
@@ -1688,9 +1680,7 @@ void MainFrame::Create(){
 		g_page_textures = GroupDialog_addPage( "Textures", TextureBrowser_constructWindow( GroupDialog_getWindow() ), TextureBrowserExportTitleCaller() );
 	}
 
-	{
-		g_page_models = GroupDialog_addPage( "Models", ModelBrowser_constructWindow( GroupDialog_getWindow() ), RawStringExportCaller( "Models" ) );
-	}
+	g_page_models = GroupDialog_addPage( "Models", ModelBrowser_constructWindow( GroupDialog_getWindow() ), RawStringExportCaller( "Models" ) );
 
 	window->show();
 
@@ -1948,7 +1938,7 @@ void MainFrame::SetGridStatus(){
 	       << "  F:" << GridStatus_getTexdefTypeIdLabel()
 	       << "  C:" << GridStatus_getFarClipDistance()
 	       << "  L:" << lock;
-	SetStatusText( c_status_grid, status.c_str() );
+	SetStatusText( c_status_grid, status );
 }
 
 void GridStatus_changed(){
@@ -1978,10 +1968,10 @@ void OpenGLFont_select(){
 
 void GlobalGL_sharedContextCreated(){
 	// report OpenGL information
-	globalOutputStream() << "GL_VENDOR: " << reinterpret_cast<const char*>( gl().glGetString( GL_VENDOR ) ) << "\n";
-	globalOutputStream() << "GL_RENDERER: " << reinterpret_cast<const char*>( gl().glGetString( GL_RENDERER ) ) << "\n";
-	globalOutputStream() << "GL_VERSION: " << reinterpret_cast<const char*>( gl().glGetString( GL_VERSION ) ) << "\n";
-	globalOutputStream() << "GL_EXTENSIONS: " << reinterpret_cast<const char*>( gl().glGetString( GL_EXTENSIONS ) ) << "\n";
+	globalOutputStream() << "GL_VENDOR: " << reinterpret_cast<const char*>( gl().glGetString( GL_VENDOR ) ) << '\n';
+	globalOutputStream() << "GL_RENDERER: " << reinterpret_cast<const char*>( gl().glGetString( GL_RENDERER ) ) << '\n';
+	globalOutputStream() << "GL_VERSION: " << reinterpret_cast<const char*>( gl().glGetString( GL_VERSION ) ) << '\n';
+	globalOutputStream() << "GL_EXTENSIONS: " << reinterpret_cast<const char*>( gl().glGetString( GL_EXTENSIONS ) ) << '\n';
 
 	QGL_sharedContextCreated( GlobalOpenGL() );
 
@@ -2082,8 +2072,12 @@ void MainFrame_Construct(){
 	GlobalPreferenceSystem().registerPreference( "OpenGLFont", CopiedStringImportStringCaller( g_OpenGLFont ), CopiedStringExportStringCaller( g_OpenGLFont ) );
 	GlobalPreferenceSystem().registerPreference( "OpenGLFontSize", IntImportStringCaller( g_OpenGLFontSize ), IntExportStringCaller( g_OpenGLFontSize ) );
 
-	GlobalPreferenceSystem().registerPreference( "ExtraResoucePath", CopiedStringImportStringCaller( g_strExtraResourcePath ), CopiedStringExportStringCaller( g_strExtraResourcePath ) );
+	for( size_t i = 0; i < g_strExtraResourcePaths.size(); ++i )
+		GlobalPreferenceSystem().registerPreference( StringStream<32>( "ExtraResourcePath", i ),
+			CopiedStringImportStringCaller( g_strExtraResourcePaths[i] ), CopiedStringExportStringCaller( g_strExtraResourcePaths[i] ) );
+
 	GlobalPreferenceSystem().registerPreference( "EnginePath", CopiedStringImportStringCaller( g_strEnginePath ), CopiedStringExportStringCaller( g_strEnginePath ) );
+	GlobalPreferenceSystem().registerPreference( "InstalledDevFilesPath", CopiedStringImportStringCaller( g_installedDevFilesPath ), CopiedStringExportStringCaller( g_installedDevFilesPath ) );
 	if ( g_strEnginePath.empty() )
 	{
 		g_strEnginePath_was_empty_1st_start = true;
@@ -2098,7 +2092,7 @@ void MainFrame_Construct(){
 #error "unknown platform"
 #endif
 		    ;
-		g_strEnginePath = StringOutputStream( 256 )( DirectoryCleaned( g_pGameDescription->getRequiredKeyValue( ENGINEPATH_ATTRIBUTE ) ) ).c_str();
+		g_strEnginePath = StringStream( DirectoryCleaned( g_pGameDescription->getRequiredKeyValue( ENGINEPATH_ATTRIBUTE ) ) );
 	}
 
 

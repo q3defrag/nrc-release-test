@@ -100,8 +100,6 @@
 
 #define DEF_RADIOSITY_BOUNCE    1.0f    /* ydnar: default to 100% re-emitted light */
 
-#define MAX_SHADER_INFO         8192
-
 
 /* epair parsing (note case-sensitivity directive) */
 #define CASE_INSENSITIVE_EPAIRS 1
@@ -187,6 +185,8 @@ enum class EBrushType
 #define LS_UNUSED               0xFE
 #define LS_NONE                 0xFF
 
+inline bool style_is_valid( int style ){ return LS_NORMAL <= style && style < LS_NONE; }
+
 #define MAX_LIGHTMAP_SHADERS    256
 
 /* ok to increase these at the expense of more memory */
@@ -200,8 +200,6 @@ enum class EBrushType
 #define MAX_MAP_LIGHTGRID       0x100000    //%	0x800000 /* ydnar: set to points, not bytes */
 #define MAX_MAP_VISCLUSTERS     0x4000 // <= MAX_MAP_LEAFS
 #define MAX_MAP_VISIBILITY      ( VIS_HEADER_SIZE + MAX_MAP_VISCLUSTERS * ( ( ( MAX_MAP_VISCLUSTERS + 63 ) & ~63 ) >> 3 ) )
-
-#define MAX_MAP_DRAW_SURFS      0x20000
 
 /* the editor uses these predefined yaw angles to orient entities up or down */
 #define ANGLE_UP                -1
@@ -752,7 +750,6 @@ struct parseMesh_t
 	indexMap_t          *im;
 
 	/* grouping */
-	bool grouped;
 	float longestCurve;
 	int maxIterations;
 };
@@ -1492,6 +1489,7 @@ void                        WritePortalFile( const tree_t& tree );
 /* writebsp.c */
 void                        SetModelNumbers();
 void                        SetLightStyles();
+void                        UnSetLightStyles();
 
 int                         EmitShader( const char *shader, const int *contentFlags, const int *surfaceFlags );
 
@@ -1646,7 +1644,7 @@ int                         ImportLightmapsMain( Args& args );
 
 void                        SetupSurfaceLightmaps();
 void                        StitchSurfaceLightmaps();
-void                        StoreSurfaceLightmaps( bool fastAllocate );
+void                        StoreSurfaceLightmaps( bool fastAllocate, bool storeForReal );
 
 
 /* exportents.c */
@@ -1718,6 +1716,7 @@ void                        InjectCommandLine( const char *stage, const std::vec
 /* general */
 inline shaderInfo_t       *shaderInfo;
 inline int numShaderInfo;
+inline int max_shader_info = 8192;
 
 inline String64 mapName;                 /* ydnar: per-map custom shaders for larger lightmaps */
 inline CopiedString mapShaderFile;
@@ -1771,6 +1770,7 @@ inline int metaGoodScore = -1;
 inline bool g_noob;
 inline String64 globalCelShader;
 inline bool keepLights;
+inline bool keepModels;
 
 #if Q3MAP2_EXPERIMENTAL_SNAP_NORMAL_FIX
 // Increasing the normalEpsilon to compensate for new logic in SnapNormal(), where
@@ -1824,6 +1824,7 @@ inline EBrushType g_brushType = EBrushType::Undefined;
 /* surface stuff */
 inline mapDrawSurface_t   *mapDrawSurfs;
 inline int numMapDrawSurfs;
+inline int max_map_draw_surfs = 0x20000;
 
 inline int numSurfacesByType[ static_cast<std::size_t>( ESurfaceType::Shader ) + 1 ];
 inline int numStripSurfaces;

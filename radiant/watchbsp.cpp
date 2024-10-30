@@ -39,7 +39,6 @@
 #include <QTimer>
 
 #include "commandlib.h"
-#include "convert.h"
 #include "string/string.h"
 #include "stream/stringstream.h"
 
@@ -97,13 +96,13 @@ private:
 	socket_t *m_pListenSocket;
 	socket_t *m_pInSocket;
 	netmessage_t msg;
-	GPtrArray *m_pCmd;
+	std::vector<CopiedString> m_commands;
 // used to timeout EBeginStep
 	Timer m_timeout_timer;
 	std::size_t m_iCurrentStep;
 	QTimer m_monitoring_timer;
 // name of the map so we can run the engine
-	char    *m_sBSPName;
+	CopiedString m_sBSPName;
 // buffer we use in push mode to receive data directly from the network
 	xmlParserInputBufferPtr m_xmlInputBuffer;
 	xmlParserCtxtPtr m_xmlParserCtxt;
@@ -118,12 +117,10 @@ private:
 
 public:
 	CWatchBSP(){
-		m_pCmd = 0;
 		m_bBSPPlugin = false;
 		m_pListenSocket = NULL;
 		m_pInSocket = NULL;
 		m_eState = EIdle;
-		m_sBSPName = NULL;
 		m_xmlInputBuffer = NULL;
 		m_bNeedCtxtInit = true;
 		m_monitoring_timer.callOnTimeout( [this](){ RoutineProcessing(); } );
@@ -142,17 +139,9 @@ public:
 // called regularly to keep listening
 	void RoutineProcessing();
 // start a monitoring loop with the following steps
-	void DoMonitoringLoop( GPtrArray *pCmd, const char *sBSPName );
+	void DoMonitoringLoop( const std::vector<CopiedString>& commands, const char *sBSPName );
 	void EndMonitoringLoop(){
 		Reset();
-		if ( m_sBSPName ) {
-			string_release( m_sBSPName, string_length( m_sBSPName ) );
-			m_sBSPName = 0;
-		}
-		if ( m_pCmd ) {
-			g_ptr_array_free( m_pCmd, TRUE );
-			m_pCmd = 0;
-		}
 	}
 // close everything - may be called from the outside to abort the process
 	void Reset();
@@ -174,6 +163,90 @@ bool g_WatchBSP0_DumpLog = false;
 // if we don't get a connection quick enough we assume something failed and go back to idling
 const int g_WatchBSP_Timeout = 5;
 
+// manages customizable string, having variable internal default
+// keeps empty, if marked with "default:" prefix, to allow altered default
+// has CB to return custom or default to prefs dialog, other CB to return customized or empty to prefs saver
+class DefaultableString
+{
+	CopiedString m_string;
+	CopiedString ( * const m_getDefault )();
+	static constexpr char m_defaultPrefix[] = "default:";
+public:
+	DefaultableString( CopiedString ( * const getDefault )() ) : m_getDefault( getDefault ){}
+	void Import( const char *string ){
+		if( string_equal_prefix( string, m_defaultPrefix ) )
+			m_string = "";
+		else
+			m_string = string;
+	}
+	void ExportWithDefault( const StringImportCallback& importer ) const {
+		importer( m_string.empty()? StringStream( m_defaultPrefix, m_getDefault() ) : m_string.c_str() );
+	}
+	void Export( const StringImportCallback& importer ) const {
+		importer( m_string.c_str() );
+	}
+	auto getImportCaller(){
+		return MemberCaller1<DefaultableString, const char*, &DefaultableString::Import>( *this );
+	}
+	auto getExportWithDefaultCaller(){
+		return ConstMemberCaller1<DefaultableString, const StringImportCallback&, &DefaultableString::ExportWithDefault>( *this );
+	}
+	auto getExportCaller(){
+		return ConstMemberCaller1<DefaultableString, const StringImportCallback&, &DefaultableString::Export>( *this );
+	}
+	CopiedString string() const {
+		return m_string.empty()? m_getDefault() : m_string;
+	}
+};
+
+template<bool isMP>
+CopiedString constructEngineArgs(){
+	StringOutputStream string( 256 );
+	if ( g_pGameDescription->mGameType == "q2"
+	  || g_pGameDescription->mGameType == "heretic2" ) {
+		string << ". +exec radiant.cfg +map %mapname%";
+	}
+	else{
+		string << "+set sv_pure 0";
+		// TTimo: a check for vm_* but that's all fine
+		//cmdline = "+set sv_pure 0 +set vm_ui 0 +set vm_cgame 0 +set vm_game 0 ";
+		const char* fs_game = gamename_get();
+		if ( !string_equal( fs_game, basegame_get() ) ) {
+			string << " +set fs_game " << fs_game;
+		}
+		if ( g_pGameDescription->mGameType == "wolf" ) {
+		//|| g_pGameDescription->mGameType == "et" )
+			if constexpr ( isMP ) // MP
+				string << " +devmap %mapname%";
+			else // SP
+				string << " +set nextmap \"spdevmap %mapname%\"";
+		}
+		else{
+			string << " +devmap %mapname%";
+		}
+	}
+	return string.c_str();
+}
+
+#if defined( WIN32 )
+#define ENGINE_ATTRIBUTE "engine_win32"
+#define MP_ENGINE_ATTRIBUTE "mp_engine_win32"
+#elif defined( __linux__ ) || defined ( __FreeBSD__ )
+#define ENGINE_ATTRIBUTE "engine_linux"
+#define MP_ENGINE_ATTRIBUTE "mp_engine_linux"
+#elif defined( __APPLE__ )
+#define ENGINE_ATTRIBUTE "engine_macos"
+#define MP_ENGINE_ATTRIBUTE "mp_engine_macos"
+#else
+#error "unsupported platform"
+#endif
+
+static DefaultableString g_engineExecutable( []()->CopiedString{ return g_pGameDescription->getRequiredKeyValue( ENGINE_ATTRIBUTE ); } );
+static DefaultableString g_engineExecutableMP( []()->CopiedString{ return g_pGameDescription->getKeyValue( MP_ENGINE_ATTRIBUTE ); } );
+
+static DefaultableString g_engineArgs( constructEngineArgs<false> );
+static DefaultableString g_engineArgsMP( constructEngineArgs<true> );
+
 
 void Build_constructPreferences( PreferencesPage& page ){
 	QCheckBox* monitorbsp = page.appendCheckBox( "", "Enable Build Process Monitoring", g_WatchBSP_Enabled );
@@ -181,6 +254,18 @@ void Build_constructPreferences( PreferencesPage& page ){
 	QCheckBox* runengine = page.appendCheckBox( "", "Run Engine After Compile", g_WatchBSP_RunQuake );
 	Widget_connectToggleDependency( leakstop, monitorbsp );
 	Widget_connectToggleDependency( runengine, monitorbsp );
+
+	QWidget* engine = page.appendEntry( "Engine to Run", g_engineExecutable.getImportCaller(), g_engineExecutable.getExportWithDefaultCaller() );
+	Widget_connectToggleDependency( engine, runengine );
+	QWidget* engineargs = page.appendEntry( "Engine Arguments", g_engineArgs.getImportCaller(), g_engineArgs.getExportWithDefaultCaller() );
+	Widget_connectToggleDependency( engineargs, runengine );
+	if( !string_empty( g_pGameDescription->getKeyValue( "show_gamemode" ) ) ){
+		QWidget* mpengine = page.appendEntry( "MP Engine to Run", g_engineExecutableMP.getImportCaller(), g_engineExecutableMP.getExportWithDefaultCaller() );
+		Widget_connectToggleDependency( mpengine, runengine );
+		QWidget* mpengineargs = page.appendEntry( "MP Engine Arguments", g_engineArgsMP.getImportCaller(), g_engineArgsMP.getExportWithDefaultCaller() );
+		Widget_connectToggleDependency( mpengineargs, runengine );
+	}
+
 	page.appendCheckBox( "", "Dump non Monitored Builds Log", g_WatchBSP0_DumpLog );
 }
 void Build_constructPage( PreferenceGroup& group ){
@@ -202,6 +287,10 @@ void BuildMonitor_Construct(){
 	GlobalPreferenceSystem().registerPreference( "BuildMonitor", BoolImportStringCaller( g_WatchBSP_Enabled ), BoolExportStringCaller( g_WatchBSP_Enabled ) );
 	GlobalPreferenceSystem().registerPreference( "BuildRunGame", BoolImportStringCaller( g_WatchBSP_RunQuake ), BoolExportStringCaller( g_WatchBSP_RunQuake ) );
 	GlobalPreferenceSystem().registerPreference( "BuildLeakStop", BoolImportStringCaller( g_WatchBSP_LeakStop ), BoolExportStringCaller( g_WatchBSP_LeakStop ) );
+	GlobalPreferenceSystem().registerPreference( "BuildEngineExecutable", g_engineExecutable.getImportCaller(), g_engineExecutable.getExportCaller() );
+	GlobalPreferenceSystem().registerPreference( "BuildEngineExecutableMP", g_engineExecutableMP.getImportCaller(), g_engineExecutableMP.getExportCaller() );
+	GlobalPreferenceSystem().registerPreference( "BuildEngineArgs", g_engineArgs.getImportCaller(), g_engineArgs.getExportCaller() );
+	GlobalPreferenceSystem().registerPreference( "BuildEngineArgsMP", g_engineArgsMP.getImportCaller(), g_engineArgsMP.getExportCaller() );
 	GlobalPreferenceSystem().registerPreference( "BuildDumpLog", BoolImportStringCaller( g_WatchBSP0_DumpLog ), BoolExportStringCaller( g_WatchBSP0_DumpLog ) );
 
 	Build_registerPreferencesPage();
@@ -216,7 +305,7 @@ CWatchBSP *GetWatchBSP(){
 	return g_pWatchBSP;
 }
 
-void BuildMonitor_Run( GPtrArray* commands, const char* mapName ){
+void BuildMonitor_Run( const std::vector<CopiedString>& commands, const char* mapName ){
 	GetWatchBSP()->DoMonitoringLoop( commands, mapName );
 }
 
@@ -241,11 +330,11 @@ static void abortStream( message_info_t *data ){
 
 static void saxStartElement( message_info_t *data, const xmlChar *name, const xmlChar **attrs ){
 #if 0
-	globalOutputStream() << "<" << name;
+	globalOutputStream() << '<' << name;
 	if ( attrs != 0 ) {
 		for ( const xmlChar** p = attrs; *p != 0; p += 2 )
 		{
-			globalOutputStream() << " " << p[0] << "=" << makeQuoted( p[1] );
+			globalOutputStream() << ' ' << p[0] << '=' << makeQuoted( p[1] );
 		}
 	}
 	globalOutputStream() << ">\n";
@@ -328,7 +417,7 @@ static void saxStartElement( message_info_t *data, const xmlChar *name, const xm
 
 static void saxEndElement( message_info_t *data, const xmlChar *name ){
 #if 0
-	globalOutputStream() << "<" << name << "/>\n";
+	globalOutputStream() << '<' << name << "/>\n";
 #endif
 
 	data->recurse--;
@@ -399,7 +488,7 @@ static void saxCharacters( message_info_t *data, const xmlChar *ch, int len ){
 }
 
 static void saxComment( void *ctx, const xmlChar *msg ){
-	globalOutputStream() << "XML comment: " << reinterpret_cast<const char*>( msg ) << "\n";
+	globalOutputStream() << "XML comment: " << reinterpret_cast<const char*>( msg ) << '\n';
 }
 
 static void saxWarning( void *ctx, const char *msg, ... ){
@@ -409,7 +498,7 @@ static void saxWarning( void *ctx, const char *msg, ... ){
 	va_start( args, msg );
 	vsprintf( saxMsgBuffer, msg, args );
 	va_end( args );
-	globalWarningStream() << "XML warning: " << saxMsgBuffer << "\n";
+	globalWarningStream() << "XML warning: " << saxMsgBuffer << '\n';
 }
 
 static void saxError( void *ctx, const char *msg, ... ){
@@ -419,7 +508,7 @@ static void saxError( void *ctx, const char *msg, ... ){
 	va_start( args, msg );
 	vsprintf( saxMsgBuffer, msg, args );
 	va_end( args );
-	globalErrorStream() << "XML error: " << saxMsgBuffer << "\n";
+	globalErrorStream() << "XML error: " << saxMsgBuffer << '\n';
 }
 
 static void saxFatal( void *ctx, const char *msg, ... ){
@@ -430,7 +519,7 @@ static void saxFatal( void *ctx, const char *msg, ... ){
 	va_start( args, msg );
 	vsprintf( buffer, msg, args );
 	va_end( args );
-	globalErrorStream() << "XML fatal error: " << buffer << "\n";
+	globalErrorStream() << "XML fatal error: " << buffer << '\n';
 }
 
 static xmlSAXHandler saxParser = {
@@ -517,15 +606,13 @@ void CWatchBSP::DoEBeginStep(){
 
 	if ( !m_bBSPPlugin ) {
 		globalOutputStream() << "=== running build command ===\n"
-		                     << static_cast<const char*>( g_ptr_array_index( m_pCmd, m_iCurrentStep ) ) << "\n";
+		                     << m_commands[m_iCurrentStep] << '\n';
 
-		if ( !Q_Exec( NULL, (char *)g_ptr_array_index( m_pCmd, m_iCurrentStep ), NULL, true, false ) ) {
-			StringOutputStream msg( 256 );
-			msg << "Failed to execute the following command: ";
-			msg << reinterpret_cast<const char*>( g_ptr_array_index( m_pCmd, m_iCurrentStep ) );
-			msg << "\nCheck that the file exists and that you don't run out of system resources.\n";
-			globalOutputStream() << msg.c_str();
-			qt_MessageBox( MainFrame_getWindow(), msg.c_str(), "Build monitoring", EMessageBoxType::Error );
+		if ( !Q_Exec( NULL, const_cast<char*>( m_commands[m_iCurrentStep].c_str() ), NULL, true, false ) ) {
+			const auto msg = StringStream( "Failed to execute the following command: ", m_commands[m_iCurrentStep],
+			                               "\nCheck that the file exists and that you don't run out of system resources.\n" );
+			globalOutputStream() << msg;
+			qt_MessageBox( MainFrame_getWindow(), msg, "Build monitoring", EMessageBoxType::Error );
 			return;
 		}
 		// re-initialise the debug window
@@ -537,68 +624,6 @@ void CWatchBSP::DoEBeginStep(){
 	m_monitoring_timer.start();
 }
 
-
-#if defined( WIN32 )
-#define ENGINE_ATTRIBUTE "engine_win32"
-#define MP_ENGINE_ATTRIBUTE "mp_engine_win32"
-#elif defined( __linux__ ) || defined ( __FreeBSD__ )
-#define ENGINE_ATTRIBUTE "engine_linux"
-#define MP_ENGINE_ATTRIBUTE "mp_engine_linux"
-#elif defined( __APPLE__ )
-#define ENGINE_ATTRIBUTE "engine_macos"
-#define MP_ENGINE_ATTRIBUTE "mp_engine_macos"
-#else
-#error "unsupported platform"
-#endif
-
-class RunEngineConfiguration
-{
-public:
-	const char* executable;
-	const char* mp_executable;
-	bool do_sp_mp;
-
-	RunEngineConfiguration() :
-		executable( g_pGameDescription->getRequiredKeyValue( ENGINE_ATTRIBUTE ) ),
-		mp_executable( g_pGameDescription->getKeyValue( MP_ENGINE_ATTRIBUTE ) ){
-		do_sp_mp = !string_empty( mp_executable );
-	}
-};
-
-inline void GlobalGameDescription_string_write_mapparameter( StringOutputStream& string, const char* mapname ){
-	if ( g_pGameDescription->mGameType == "q2"
-	  || g_pGameDescription->mGameType == "heretic2" ) {
-		string << ". +exec radiant.cfg +map " << mapname;
-	}
-	else
-	{
-		string << "+set sv_pure 0 ";
-		// TTimo: a check for vm_* but that's all fine
-		//cmdline = "+set sv_pure 0 +set vm_ui 0 +set vm_cgame 0 +set vm_game 0 ";
-		const char* fs_game = gamename_get();
-		if ( !string_equal( fs_game, basegame_get() ) ) {
-			string << "+set fs_game " << fs_game << " ";
-		}
-		if ( g_pGameDescription->mGameType == "wolf" ) {
-			//|| g_pGameDescription->mGameType == "et")
-			if ( string_equal( gamemode_get(), "mp" ) ) {
-				// MP
-				string << "+devmap " << mapname;
-			}
-			else
-			{
-				// SP
-				string << "+set nextmap \"spdevmap " << mapname << "\"";
-			}
-		}
-		else
-		{
-			string << "+devmap " << mapname;
-		}
-	}
-}
-
-
 void CWatchBSP::RoutineProcessing(){
 	switch ( m_eState )
 	{
@@ -606,8 +631,8 @@ void CWatchBSP::RoutineProcessing(){
 		// timeout: if we don't get an incoming connection fast enough, go back to idle
 		if ( m_timeout_timer.elapsed_sec() > g_WatchBSP_Timeout ) {
 			qt_MessageBox( MainFrame_getWindow(),  "The connection timed out, assuming the build process failed\n"
-			                                                      "Make sure you are using a networked version of Q3Map?\n"
-			                                                      "Otherwise you need to disable BSP Monitoring in prefs.", "BSP process monitoring" );
+			                                       "Make sure you are using a networked version of Q3Map?\n"
+			                                       "Otherwise you need to disable BSP Monitoring in prefs.", "BSP process monitoring" );
 			EndMonitoringLoop();
 #if 0
 			if ( m_bBSPPlugin ) {
@@ -693,7 +718,7 @@ void CWatchBSP::RoutineProcessing(){
 #endif
 					// move to next step or finish
 					m_iCurrentStep++;
-					if ( m_iCurrentStep < m_pCmd->len ) {
+					if ( m_iCurrentStep < m_commands.size() ) {
 						DoEBeginStep();
 					}
 					else
@@ -701,39 +726,29 @@ void CWatchBSP::RoutineProcessing(){
 						// launch the engine .. OMG
 						if ( g_WatchBSP_RunQuake ) {
 							globalOutputStream() << "Running engine...\n";
-							StringOutputStream cmd( 256 );
-							// build the command line
-							cmd << EnginePath_get();
 							// this is game dependant
-
-							RunEngineConfiguration engineConfig;
-
-							if ( engineConfig.do_sp_mp ) {
-								if ( string_equal( gamemode_get(), "mp" ) ) {
-									cmd << engineConfig.mp_executable;
+							const auto [exe, args] = [&](){
+								if( string_equal( gamemode_get(), "mp" ) ){
+									if( const auto exe = g_engineExecutableMP.string(); !exe.empty() )
+										return std::pair( std::move( exe ), g_engineArgsMP.string() );
 								}
-								else
-								{
-									cmd << engineConfig.executable;
-								}
-							}
+								return std::pair( g_engineExecutable.string(), g_engineArgs.string() );
+							}();
+
+							auto cmd = StringStream( '"', EnginePath_get(), exe, '"', ' ' );
+
+							if( const char *map = strstr( args.c_str(), "%mapname%" ) )
+								cmd << StringRange( args.c_str(), map ) << m_sBSPName << ( map + strlen( "%mapname%" ) );
 							else
-							{
-								cmd << engineConfig.executable;
-							}
+								cmd << args;
 
-							StringOutputStream cmdline;
-
-							GlobalGameDescription_string_write_mapparameter( cmdline, m_sBSPName );
-
-							globalOutputStream() << cmd.c_str() << " " << cmdline.c_str() << "\n";
+							globalOutputStream() << cmd << '\n';
 
 							// execute now
-							if ( !Q_Exec( cmd.c_str(), (char *)cmdline.c_str(), EnginePath_get(), false, false ) ) {
-								StringOutputStream msg;
-								msg << "Failed to execute the following command: " << cmd.c_str() << cmdline.c_str();
-								globalOutputStream() << msg.c_str();
-								qt_MessageBox( MainFrame_getWindow(),  msg.c_str(), "Build monitoring", EMessageBoxType::Error );
+							if ( !Q_Exec( nullptr, cmd.c_str(), EnginePath_get(), false, false ) ) {
+								const auto msg = StringStream( "Failed to execute the following command: ", cmd, '\n' );
+								globalOutputStream() << msg;
+								qt_MessageBox( MainFrame_getWindow(), msg, "Build monitoring", EMessageBoxType::Error );
 							}
 						}
 						EndMonitoringLoop();
@@ -747,17 +762,8 @@ void CWatchBSP::RoutineProcessing(){
 	}
 }
 
-GPtrArray* str_ptr_array_clone( GPtrArray* array ){
-	GPtrArray* cloned = g_ptr_array_sized_new( array->len );
-	for ( guint i = 0; i < array->len; ++i )
-	{
-		g_ptr_array_add( cloned, g_strdup( (char*)g_ptr_array_index( array, i ) ) );
-	}
-	return cloned;
-}
-
-void CWatchBSP::DoMonitoringLoop( GPtrArray *pCmd, const char *sBSPName ){
-	m_sBSPName = string_clone( sBSPName );
+void CWatchBSP::DoMonitoringLoop( const std::vector<CopiedString>& commands, const char *sBSPName ){
+	m_sBSPName = sBSPName;
 	if ( m_eState != EIdle ) {
 		globalWarningStream() << "WatchBSP got a monitoring request while not idling...\n";
 		// prompt the user, should we cancel the current process and go ahead?
@@ -767,7 +773,7 @@ void CWatchBSP::DoMonitoringLoop( GPtrArray *pCmd, const char *sBSPName ){
 			Reset();
 //		}
 	}
-	m_pCmd = str_ptr_array_clone( pCmd );
+	m_commands = commands;
 	m_iCurrentStep = 0;
 	DoEBeginStep();
 }

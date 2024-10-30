@@ -88,7 +88,6 @@ void LoadLists(){
 //========================//
 
 void DoIntersect(){
-	UndoableCommand undo( "bobToolz.intersect" );
 	IntersectRS rs;
 
 	if ( !DoIntersectBox( &rs ) ) {
@@ -108,18 +107,16 @@ void DoIntersect(){
 	{
 	case BRUSH_OPT_SELECTED:
 	{
-
-		world.LoadFromEntity( GlobalRadiant().getMapWorldEntity(), false );
 		world.LoadSelectedBrushes();
 		break;
 	}
 	case BRUSH_OPT_WHOLE_MAP:
 	{
-		world.LoadFromEntity( GlobalRadiant().getMapWorldEntity(), false );
+		world.LoadFromEntity( GlobalRadiant().getMapWorldEntity(), {.loadDetail = rs.bUseDetail} );
 		break;
 	}
 	}
-	world.RemoveNonCheckBrushes( &exclusionList, rs.bUseDetail );
+	world.RemoveNonCheckBrushes( &exclusionList );
 
 	bool* pbSelectList;
 	if ( rs.bDuplicateOnly ) {
@@ -133,6 +130,34 @@ void DoIntersect(){
 	int brushCount = GlobalSelectionSystem().countSelected();
 	globalOutputStream() << "bobToolz Intersect: " << brushCount << " intersecting brushes found.\n";
 	delete[] pbSelectList;
+}
+
+void DoFindDuplicates()
+{
+	DMap map;
+	map.LoadAll( {.loadVisibleOnly = true} );
+
+	std::vector<const DBrush *> brushes;
+
+	for( const auto *e : map.entityList )
+		for( const auto *b : e->brushList )
+			brushes.push_back( b );
+
+	GlobalSelectionSystem().setSelectedAll( false );
+
+	for( auto b = brushes.begin(); b != brushes.end(); ++b ){
+		if( *b != nullptr ){
+			for( auto b2 = std::next( b ); b2 != brushes.end(); ++b2 ){
+				if( *b2 != nullptr ){
+					if( ( *b )->operator==( *b2 ) ){
+						( *b2 )->selectInRadiant();
+						*b2 = nullptr;
+					}
+				}
+			}
+		}
+	}
+	globalOutputStream() << "bobToolz Find Duplicates: " << (int)std::count( brushes.cbegin(), brushes.cend(), nullptr ) << " duplicate brushes found.\n";
 }
 
 void DoPolygonsTB(){
@@ -226,7 +251,7 @@ void DoResetTextures(){
 	else if ( ret == eIDYES )
 	{
 		DMap world;
-		world.LoadAll( true );
+		world.LoadAll( {.loadPatches = true} );
 		world.ResetTextures( texName,              rs.fScale,      rs.fShift,      rs.rotation, rs.newTextureName,
 		                     rs.bResetTextureName, rs.bResetScale, rs.bResetShift, rs.bResetRotation );
 	}

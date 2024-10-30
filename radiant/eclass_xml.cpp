@@ -211,7 +211,7 @@ public:
 			std::size_t bit = atoi( element.attribute( "bit" ) );
 			ASSERT_MESSAGE( bit < MAX_FLAGS, "invalid flag bit" );
 			ASSERT_MESSAGE( string_empty( entityClass->flagnames[bit] ), "non-unique flag bit" );
-			strcpy( entityClass->flagnames[bit], key );
+			strncpy( entityClass->flagnames[bit], key, std::size( entityClass->flagnames[bit] ) - 1 );
 			entityClass->flagAttributes[bit] = m_attribute;
 		}
 		else if( entityClass->fixedsize && string_equal( type, "model" ) ){
@@ -245,7 +245,7 @@ public:
 			desc = StringRange( data, length );
 		}
 		else{ // in case of special symbols, e.g. &quot, &apos, &lt, &gt, &amp, xml writes in a few steps
-			desc = StringOutputStream()( desc, StringRange( data, length ) );
+			desc = StringStream( desc, StringRange( data, length ) );
 		}
 
 		return m_comment.write( data, length );
@@ -290,7 +290,8 @@ class ClassImporter : public TreeXMLImporter
 	ListAttributeTypes& m_listTypes;
 
 public:
-	ClassImporter( EntityClassCollector& collector, ListAttributeTypes& listTypes, const XMLElement& element ) : m_collector( collector ), m_listTypes( listTypes ){
+	ClassImporter( EntityClassCollector& collector, ListAttributeTypes& listTypes, const XMLElement& element )
+	: m_collector( collector ), m_comment( 1024 ), m_listTypes( listTypes ){
 		m_eclass = Eclass_Alloc();
 		m_eclass->free = &Eclass_Free;
 
@@ -299,13 +300,13 @@ public:
 		m_eclass->name_set( name );
 
 		const char* color = element.attribute( "color" );
-		ASSERT_MESSAGE( !string_empty( name ), "color attribute not specified for class " << name );
+		ASSERT_MESSAGE( !string_empty( color ), "color attribute not specified for class " << name );
 		string_parse_vector3( color, m_eclass->color );
 		eclass_capture_state( m_eclass );
 
 		const char* model = element.attribute( "model" );
 		if ( !string_empty( model ) ) {
-			m_eclass->m_modelpath = StringOutputStream( 256 )( PathCleaned( model ) ).c_str();
+			m_eclass->m_modelpath = StringStream<64>( PathCleaned( model ) );
 		}
 
 		const char* type = element.name();
@@ -317,7 +318,7 @@ public:
 		}
 	}
 	~ClassImporter(){
-		m_eclass->m_comments = m_comment.c_str();
+		m_eclass->m_comments = m_comment;
 		m_collector.insert( m_eclass );
 
 		for ( ListAttributeTypes::iterator i = m_listTypes.begin(); i != m_listTypes.end(); ++i )

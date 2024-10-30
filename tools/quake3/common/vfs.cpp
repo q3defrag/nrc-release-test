@@ -158,7 +158,7 @@ void vfsInitDirectory( const char *path ){
 	Sys_Printf( "VFS Init: %s\n", path );
 
 	// clean and store copy to be safe of original's reallocation
-	const CopiedString pathCleaned = g_strDirs.emplace_back( StringOutputStream( 256 )( DirectoryCleaned( path ) ) );
+	const CopiedString pathCleaned = g_strDirs.emplace_back( StringStream( DirectoryCleaned( path ) ) );
 
 	if ( g_bUsePak ) {
 		dir = g_dir_open( path, 0, NULL );
@@ -172,10 +172,10 @@ void vfsInitDirectory( const char *path ){
 					continue;
 
 				if ( path_extension_is( name, "pk3" ) ) {
-					paks.push_back( StringOutputStream( 256 )( pathCleaned, name ) );
+					paks.push_back( StringStream( pathCleaned, name ) );
 				}
 				else if ( path_extension_is( name, "pk3dir" ) ) {
-					g_strDirs.emplace_back( StringOutputStream( 256 )( pathCleaned, name, '/' ) );
+					g_strDirs.emplace_back( StringStream( pathCleaned, name, '/' ) );
 				}
 			}
 			g_dir_close( dir );
@@ -206,7 +206,7 @@ std::vector<CopiedString> vfsListShaderFiles( const char *shaderPath ){
 	};
 	/* search in dirs */
 	for ( const auto& strdir : g_strDirs ){
-		GDir *dir = g_dir_open( StringOutputStream( 256 )( strdir, shaderPath, "/" ), 0, NULL );
+		GDir *dir = g_dir_open( StringStream( strdir, shaderPath, '/' ), 0, NULL );
 
 		if ( dir != NULL ) {
 			const char* name;
@@ -241,20 +241,20 @@ void vfsShutdown(){
 // return the number of files that match
 int vfsGetFileCount( const char *filename ){
 	int count = 0;
+	auto fixedname = StringStream<64>( PathCleaned( filename ) );
 
-	auto fixed = StringOutputStream( 64 )( PathCleaned( filename ) );
-	strLower( fixed.c_str() );
-
-	for ( const VFS_PAKFILE& file : g_pakFiles )
+	for ( const auto& dir : g_strDirs )
 	{
-		if ( strEqual( file.name.c_str(), fixed ) ) {
+		if ( FileExists( StringStream( dir, fixedname ) ) ) {
 			++count;
 		}
 	}
 
-	for ( const auto& dir : g_strDirs )
+	strLower( fixedname.c_str() );
+
+	for ( const VFS_PAKFILE& file : g_pakFiles )
 	{
-		if ( FileExists( StringOutputStream( 256 )( dir, filename ) ) ) {
+		if ( strEqual( file.name.c_str(), fixedname ) ) {
 			++count;
 		}
 	}
@@ -286,27 +286,28 @@ MemBuffer vfsLoadFile( const char *filename, int index /* = 0 */ ){
 		return buffer;
 	};
 
+	auto fixedname = StringStream<64>( PathCleaned( filename ) );
+
 	// filename is a full path
 	if ( index == -1 ) {
-		return load_full_path( filename );
+		return load_full_path( fixedname );
 	}
 
 	for ( const auto& dir : g_strDirs )
 	{
-		const auto fullpath = StringOutputStream( 256 )( dir, filename );
+		const auto fullpath = StringStream( dir, fixedname );
 		if ( FileExists( fullpath ) && 0 == index-- ) {
 			return load_full_path( fullpath );
 		}
 	}
 
-	auto fixed = StringOutputStream( 64 )( PathCleaned( filename ) );
-	strLower( fixed.c_str() );
+	strLower( fixedname.c_str() );
 
 	MemBuffer buffer;
 
 	for ( const VFS_PAKFILE& file : g_pakFiles )
 	{
-		if ( strEqual( file.name.c_str(), fixed ) && 0 == index-- )
+		if ( strEqual( file.name.c_str(), fixedname ) && 0 == index-- )
 		{
 			snprintf( g_strLoadedFileLocation, sizeof( g_strLoadedFileLocation ), "%s :: %s", file.pak.unzFilePath.c_str(), filename );
 
@@ -334,11 +335,11 @@ MemBuffer vfsLoadFile( const char *filename, int index /* = 0 */ ){
 bool vfsPackFile( const char *filename, const char *packname, const int compLevel ){
 	for ( const auto& dir : g_strDirs )
 	{
-		if( vfsPackFile_Absolute_Path( StringOutputStream( 256 )( dir, filename ), filename, packname, compLevel ) )
+		if( vfsPackFile_Absolute_Path( StringStream( dir, filename ), filename, packname, compLevel ) )
 			return true;
 	}
 
-	auto fixed = StringOutputStream( 64 )( PathCleaned( filename ) );
+	auto fixed = StringStream<64>( PathCleaned( filename ) );
 	strLower( fixed.c_str() );
 
 	for ( const VFS_PAKFILE& file : g_pakFiles )

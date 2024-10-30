@@ -61,7 +61,7 @@ void GlobalShortcuts_register( const char* name, int type ){
 void GlobalShortcuts_reportUnregistered(){
 	for ( const auto& [name, shortcut] : g_shortcuts )
 		if ( !shortcut.accelerator.isEmpty() && shortcut.type == 0 )
-			globalWarningStream() << "shortcut not registered: " << name << "\n";
+			globalWarningStream() << "shortcut not registered: " << name << '\n';
 }
 
 typedef std::map<CopiedString, Command> Commands;
@@ -204,10 +204,9 @@ public:
 			return;
 		}
 		if ( accelerator == newAccel ) {
-			StringOutputStream msg;
-			msg << "The command <b>" << name << "</b> is already assigned to the key <b>" << accelerator << "</b>.<br><br>"
-			    << "Do you want to unassign <b>" << name << "</b> first?";
-			const EMessageBoxReturn r = qt_MessageBox( tree->window(), msg.c_str(), "Key already used", EMessageBoxType::Question, eIDYES | eIDNO | eIDCANCEL );
+			const auto msg = StringStream( "The command <b>", name, "</b> is already assigned to the key <b>", accelerator, "</b>.<br><br>",
+			                               "Do you want to unassign <b>", name, "</b> first?" );
+			const EMessageBoxReturn r = qt_MessageBox( tree->window(), msg, "Key already used", EMessageBoxType::Question, eIDYES | eIDNO | eIDCANCEL );
 			if ( r == eIDYES ) {
 				// clear the ACTUAL accelerator too!
 				disconnect_accelerator( name );
@@ -298,10 +297,12 @@ class Single_QKeySequenceEdit : public QKeySequenceEdit
 protected:
 	void keyPressEvent( QKeyEvent *e ) override {
 		QKeySequenceEdit::keyPressEvent( e );
+		if( e->modifiers() & Qt::KeypadModifier ) //. workaround Qt issue: Qt::KeypadModifier is ignored
+			setKeySequence( QKeySequence( keySequence()[0] | Qt::KeypadModifier ) );
 		if( QKeySequence_valid( keySequence() ) )
 			clearFocus(); // trigger editingFinished(); via losing focus 🙉
 			              // because this can still receive focus loss b4 getting deleted (practically because modal msgbox)
-						  // and two editingFinished(); b no good
+			              // and two editingFinished(); b no good
 	}
 	void focusOutEvent( QFocusEvent *event ) override {
 		editingFinished();
@@ -353,10 +354,10 @@ void DoCommandListDlg(){
 
 	{
 		// Initialize dialog
-		const auto path = StringOutputStream( 256 )( SettingsPath_get(), "commandlist.txt" );
-		globalOutputStream() << "Writing the command list to " << path.c_str() << "\n";
+		const auto path = StringStream( SettingsPath_get(), "commandlist.txt" );
+		globalOutputStream() << "Writing the command list to " << path << '\n';
 
-		TextFileOutputStream commandList( path.c_str() );
+		TextFileOutputStream commandList( path );
 
 		for( const auto&[ name, value ] : g_shortcuts )
 		{
@@ -418,7 +419,8 @@ void DoCommandListDlg(){
 
 		QPushButton *resetallbutton = buttons->addButton( "Reset All", QDialogButtonBox::ButtonRole::ResetRole );
 		QObject::connect( resetallbutton, &QPushButton::clicked, [tree](){
-			accelerator_reset_all_button_clicked( tree );
+			if( eIDYES == qt_MessageBox( tree, "Surely reset all shortcuts now?", "Boo!", EMessageBoxType::Question ) )
+				accelerator_reset_all_button_clicked( tree );
 		} );
 	}
 
@@ -432,20 +434,19 @@ void DoCommandListDlg(){
 const char* const COMMANDS_VERSION = "1.0-gtk-accelnames";
 
 void SaveCommandMap( const char* path ){
-	StringOutputStream strINI( 256 );
-	strINI << path << "shortcuts.ini";
+	const auto strINI = StringStream( path, "shortcuts.ini" );
 
-	TextFileOutputStream file( strINI.c_str() );
+	TextFileOutputStream file( strINI );
 	if ( !file.failed() ) {
 		file << "[Version]\n";
-		file << "number=" << COMMANDS_VERSION << "\n";
-		file << "\n";
+		file << "number=" << COMMANDS_VERSION << '\n';
+		file << '\n';
 		file << "[Commands]\n";
 
 		auto writeCommandMap = [&file]( const char* name, const QKeySequence& accelerator ){
-			file << name << "=";
+			file << name << '=';
 			file << accelerator;
-			file << "\n";
+			file << '\n';
 		};
 		GlobalShortcuts_foreach( writeCommandMap );
 	}
@@ -471,7 +472,7 @@ public:
 				}
 				else
 				{
-					globalWarningStream() << "WARNING: failed to parse user command " << makeQuoted( name ) << ": unknown key " << makeQuoted( value ) << "\n";
+					globalWarningStream() << "WARNING: failed to parse user command " << makeQuoted( name ) << ": unknown key " << makeQuoted( value ) << '\n';
 				}
 			}
 		}
@@ -482,37 +483,36 @@ public:
 };
 
 void LoadCommandMap( const char* path ){
-	StringOutputStream strINI( 256 );
-	strINI << path << "shortcuts.ini";
+	const auto strINI = StringStream( path, "shortcuts.ini" );
 
-	FILE* f = fopen( strINI.c_str(), "r" );
+	FILE* f = fopen( strINI, "r" );
 	if ( f != 0 ) {
 		fclose( f );
-		globalOutputStream() << "loading custom shortcuts list from " << makeQuoted( strINI.c_str() ) << "\n";
+		globalOutputStream() << "loading custom shortcuts list from " << makeQuoted( strINI ) << '\n';
 
 		Version version = version_parse( COMMANDS_VERSION );
 		Version dataVersion = { 0, 0 };
 
 		{
 			char value[1024];
-			if ( read_var( strINI.c_str(), "Version", "number", value ) ) {
+			if ( read_var( strINI, "Version", "number", value ) ) {
 				dataVersion = version_parse( value );
 			}
 		}
 
 		if ( version_compatible( version, dataVersion ) ) {
-			globalOutputStream() << "commands import: data version " << dataVersion << " is compatible with code version " << version << "\n";
-			ReadCommandMap visitor( strINI.c_str() );
+			globalOutputStream() << "commands import: data version " << dataVersion << " is compatible with code version " << version << '\n';
+			ReadCommandMap visitor( strINI );
 			GlobalShortcuts_foreach( visitor );
 			globalOutputStream() << "parsed " << visitor.count() << " custom shortcuts\n";
 		}
 		else
 		{
-			globalWarningStream() << "commands import: data version " << dataVersion << " is not compatible with code version " << version << "\n";
+			globalWarningStream() << "commands import: data version " << dataVersion << " is not compatible with code version " << version << '\n';
 		}
 	}
 	else
 	{
-		globalWarningStream() << "failed to load custom shortcuts from " << makeQuoted( strINI.c_str() ) << "\n";
+		globalWarningStream() << "failed to load custom shortcuts from " << makeQuoted( strINI ) << '\n';
 	}
 }

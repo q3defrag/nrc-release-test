@@ -18,24 +18,20 @@
 
 
 CopiedString GetCommonShader( const char* name ){
-	StringOutputStream sstream( 128 );
-	sstream << "shader_" << name;
-	const char* gotShader = g_pGameDescription->getKeyValue( sstream.c_str() );
+	const char* gotShader = g_pGameDescription->getKeyValue( StringStream<32>( "shader_", name ) );
 	if( !string_empty( gotShader ) ){
 		return gotShader;
 	}
 	else{
-		sstream.clear();
 		if( string_empty( g_pGameDescription->getKeyValue( "show_wads" ) ) ){
 			const char* commonDir = g_pGameDescription->getKeyValue( "common_shaders_dir" );
 			if( string_empty( commonDir ) )
 				commonDir = "common/";
-			sstream << "textures/" << commonDir << name;
+			return StringStream<64>( "textures/", commonDir, name ).c_str();
 		}
 		else{
-			sstream << "textures/" << name;
+			return StringStream<64>( "textures/", name ).c_str();
 		}
-		return sstream.c_str();
 	}
 }
 
@@ -178,7 +174,7 @@ void create_filter_toolbar( QToolBar *toolbar ){
 	//toolbar_append_toggle_button( toolbar, "Paths", "texture_lock.png", "FilterPaths" );
 	toolbar->addSeparator();
 	toolbar_append_toggle_button( toolbar, "Entities", "f-entities.png", "FilterEntities" );
-	toolbar_append_toggle_button( toolbar, "Point Entities", "status_entiy.png", "FilterPointEntities" );
+	toolbar_append_toggle_button( toolbar, "Point Entities", "status_entity.png", "FilterPointEntities" );
 	toolbar_append_toggle_button( toolbar, "Lights", "f-lights.png", "FilterLights" );
 	toolbar_append_toggle_button( toolbar, "Models", "f-models.png", "FilterModels" );
 

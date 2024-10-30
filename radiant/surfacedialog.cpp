@@ -104,16 +104,6 @@ class SurfaceInspector : public Dialog
 	void BuildDialog() override;
 
 	NonModalEntry *m_textureEntry;
-	NonModalSpinner *m_hshiftSpinner;
-	NonModalEntry *m_hshiftEntry;
-	NonModalSpinner *m_vshiftSpinner;
-	NonModalEntry *m_vshiftEntry;
-	NonModalSpinner *m_hscaleSpinner;
-	NonModalEntry *m_hscaleEntry;
-	NonModalSpinner *m_vscaleSpinner;
-	NonModalEntry *m_vscaleEntry;
-	NonModalSpinner *m_rotateSpinner;
-	NonModalEntry *m_rotateEntry;
 
 	IdleDraw m_idleDraw;
 
@@ -392,9 +382,8 @@ void SurfaceInspector_ProjectTexture( EProjectTexture type, bool isGuiClick ){
 		texdef.scale[0] = texdef.scale[1] = Texdef_getDefaultTextureScale();
 	}
 
-	StringOutputStream str( 32 );
-	str << "textureProject" << ( type == eProjectAxial? "Axial" : type == eProjectOrtho? "Ortho" : "Cam" );
-	UndoableCommand undo( str.c_str() );
+	const auto str = StringStream<32>( "textureProject", ( type == eProjectAxial? "Axial" : type == eProjectOrtho? "Ortho" : "Cam" ) );
+	UndoableCommand undo( str );
 
 	Vector3 direction;
 
@@ -616,13 +605,28 @@ protected:
 			 || keyEvent->key() == Qt::Key_Enter
 			 || keyEvent->key() == Qt::Key_Escape
 			 || keyEvent->key() == Qt::Key_Tab
-			 || keyEvent->key() == Qt::Key_Up
-			 || keyEvent->key() == Qt::Key_Down
-			 || keyEvent->key() == Qt::Key_PageUp
-			 || keyEvent->key() == Qt::Key_PageDown ){
+			 || ( ( keyEvent->modifiers() == Qt::KeyboardModifier::NoModifier
+			     || keyEvent->modifiers() == Qt::KeyboardModifier::KeypadModifier ) // do not filter editor's shortcuts with modifiers
+			  && ( keyEvent->key() == Qt::Key_Up
+			    || keyEvent->key() == Qt::Key_Down
+			    || keyEvent->key() == Qt::Key_PageUp
+			    || keyEvent->key() == Qt::Key_PageDown ) )
+			){
 				event->accept();
 				return true;
 			}
+		}
+		// clear focus widget while showing to keep global shortcuts working
+#ifdef WIN32
+		else if( event->type() == QEvent::Show ) {
+#else
+		else if( event->type() == QEvent::WindowActivate ) { // fixme hack hack: events order varies in OSes, QEvent::Show doesn't work in Linux
+		// QEvent::WindowActivate seems preferable for usability, but allows QLineEdit content selection w/o focusing it in WIN32
+#endif
+			QTimer::singleShot( 0, [obj](){
+				if( static_cast<QWidget*>( obj )->focusWidget() != nullptr )
+					static_cast<QWidget*>( obj )->focusWidget()->clearFocus();
+			} );
 		}
 		return QObject::eventFilter( obj, event ); // standard event processing
 	}
@@ -653,90 +657,97 @@ void SurfaceInspector::BuildDialog(){
 			}
 		}
 		{
-			auto *hbox = new QHBoxLayout;
-			vbox->addLayout( hbox );
+			auto *grid = new QGridLayout; // 5 x 5
+			vbox->addLayout( grid );
+
+			struct GridRowAdder
 			{
-				auto *form = new QFormLayout;
-				hbox->addLayout( form );
+				QGridLayout * const m_grid;
+				const int m_colLabel;
+				const int m_colField;
+				int m_row = 0;
+				void addRow( QWidget *label, QWidget *field ){
+					m_grid->addWidget( label, m_row, m_colLabel );
+					m_grid->addWidget( field, m_row, m_colField );
+					++m_row;
+				}
+				void addRow( const char *label, QWidget *field ){
+					addRow( new QLabel( label ), field );
+				}
+			};
+
+			{
+				GridRowAdder adder{ grid, 0, 2 };
+				adder.m_grid->setColumnStretch( adder.m_colField, 1 );
 				{
-					auto spin = m_hshiftSpinner = new NonModalSpinner( -8192, 8192, 0, 2, 2 );
+					auto spin = new NonModalSpinner( -8192, 8192, 0, 2, 2 );
 					spin->setCallbacks( ApplyTexdef_HShiftCaller( *this ), UpdateCaller( *this ) );
 					m_hshiftIncrement.m_spin = spin;
-					form->addRow( new SpinBoxLabel( "Horizontal shift", spin ), spin );
+					adder.addRow( new SpinBoxLabel( "Horizontal shift", spin ), spin );
 				}
 				{
-					auto spin = m_vshiftSpinner = new NonModalSpinner( -8192, 8192, 0, 2, 2 );
+					auto spin = new NonModalSpinner( -8192, 8192, 0, 2, 2 );
 					spin->setCallbacks( ApplyTexdef_VShiftCaller( *this ), UpdateCaller( *this ) );
 					m_vshiftIncrement.m_spin = spin;
-					form->addRow( new SpinBoxLabel( "Vertical shift", spin ), spin );
+					adder.addRow( new SpinBoxLabel( "Vertical shift", spin ), spin );
 				}
 				{
-					auto spin = m_hscaleSpinner = new NonModalSpinner( -8192, 8192, .5, 5, .5 );
+					auto spin = new NonModalSpinner( -8192, 8192, .5, 5, .5 );
 					spin->setCallbacks( ApplyTexdef_HScaleCaller( *this ), UpdateCaller( *this ) );
 					m_hscaleIncrement.m_spin = spin;
-					auto *hbox = new QHBoxLayout;
-					hbox->setContentsMargins( 0, 0, 0, 0 );
-					hbox->addWidget( new SpinBoxLabel( "Horizontal stretch", spin ) );
+					adder.addRow( new SpinBoxLabel( "Horizontal stretch", spin ), spin );
+
 					auto *b = new QToolButton;
+					adder.m_grid->addWidget( b, adder.m_row - 1, adder.m_colLabel + 1 );
 					b->setText( "-" );
-					hbox->addWidget( b );
-					auto *c = new QWidget;
-					c->setLayout( hbox );
-					form->addRow( c, spin );
 					QObject::connect( b, &QAbstractButton::clicked, SurfaceInspector_InvertTextureHorizontally );
 				}
 				{
-					auto spin = m_vscaleSpinner = new NonModalSpinner( -8192, 8192, .5, 5, .5 );
+					auto spin = new NonModalSpinner( -8192, 8192, .5, 5, .5 );
 					spin->setCallbacks( ApplyTexdef_VScaleCaller( *this ), UpdateCaller( *this ) );
 					m_vscaleIncrement.m_spin = spin;
-					auto *hbox = new QHBoxLayout;
-					hbox->setContentsMargins( 0, 0, 0, 0 );
-					hbox->addWidget( new SpinBoxLabel( "Vertical stretch   ", spin ) );
+					adder.addRow( new SpinBoxLabel( "Vertical stretch", spin ), spin );
+
 					auto *b = new QToolButton;
+					adder.m_grid->addWidget( b, adder.m_row - 1, adder.m_colLabel + 1 );
 					b->setText( "-" );
-					hbox->addWidget( b );
-					auto *c = new QWidget;
-					c->setLayout( hbox );
-					form->addRow( c, spin );
 					QObject::connect( b, &QAbstractButton::clicked, SurfaceInspector_InvertTextureVertically );
 				}
 				{
-					auto spin = m_rotateSpinner = new NonModalSpinner( -360, 360, 0, 2, 45, true );
+					auto spin = new NonModalSpinner( -360, 360, 0, 2, 45, true );
 					spin->setCallbacks( ApplyTexdef_RotationCaller( *this ), UpdateCaller( *this ) );
 					m_rotateIncrement.m_spin = spin;
-					form->addRow( new SpinBoxLabel( "Rotate", spin ), spin );
+					adder.addRow( new SpinBoxLabel( "Rotate", spin ), spin );
 				}
 			}
 			{
-				auto *form = new QFormLayout;
-				hbox->addLayout( form );
+				GridRowAdder adder{ grid, 3, 4 };
 				{
-					auto entry = m_hshiftEntry = new NonModalEntry( Increment::ApplyCaller( m_hshiftIncrement ), Increment::CancelCaller( m_hshiftIncrement ) );
+					auto entry = new NonModalEntry( Increment::ApplyCaller( m_hshiftIncrement ), Increment::CancelCaller( m_hshiftIncrement ) );
 					m_hshiftIncrement.m_entry = entry;
-					form->addRow( "Step", entry );
+					adder.addRow( "Step", entry );
 				}
 				{
-					auto entry = m_vshiftEntry = new NonModalEntry( Increment::ApplyCaller( m_vshiftIncrement ), Increment::CancelCaller( m_vshiftIncrement ) );
+					auto entry = new NonModalEntry( Increment::ApplyCaller( m_vshiftIncrement ), Increment::CancelCaller( m_vshiftIncrement ) );
 					m_vshiftIncrement.m_entry = entry;
-					form->addRow( "Step", entry );
+					adder.addRow( "Step", entry );
 				}
 				{
-					auto entry = m_hscaleEntry = new NonModalEntry( Increment::ApplyCaller( m_hscaleIncrement ), Increment::CancelCaller( m_hscaleIncrement ) );
+					auto entry = new NonModalEntry( Increment::ApplyCaller( m_hscaleIncrement ), Increment::CancelCaller( m_hscaleIncrement ) );
 					m_hscaleIncrement.m_entry = entry;
-					form->addRow( "Step", entry );
+					adder.addRow( "Step", entry );
 				}
 				{
-					auto entry = m_vscaleEntry = new NonModalEntry( Increment::ApplyCaller( m_vscaleIncrement ), Increment::CancelCaller( m_vscaleIncrement ) );
+					auto entry = new NonModalEntry( Increment::ApplyCaller( m_vscaleIncrement ), Increment::CancelCaller( m_vscaleIncrement ) );
 					m_vscaleIncrement.m_entry = entry;
-					form->addRow( "Step", entry );
+					adder.addRow( "Step", entry );
 				}
 				{
-					auto entry = m_rotateEntry = new NonModalEntry( Increment::ApplyCaller( m_rotateIncrement ), Increment::CancelCaller( m_rotateIncrement ) );
+					auto entry = new NonModalEntry( Increment::ApplyCaller( m_rotateIncrement ), Increment::CancelCaller( m_rotateIncrement ) );
 					m_rotateIncrement.m_entry = entry;
-					form->addRow( "Step", entry );
+					adder.addRow( "Step", entry );
 				}
 			}
-			hbox->setStretch( 0, 1 );
 		}
 		{
 			// match grid button
@@ -842,8 +853,7 @@ void SurfaceInspector::BuildDialog(){
 				// QObject::connect( frame, &QGroupBox::clicked, container, &QWidget::setVisible );
 				QObject::connect( frame, &QGroupBox::clicked, [container, wnd = GetWidget()]( bool checked ){
 					container->setVisible( checked );
-					wnd->adjustSize();
-					QTimer::singleShot( 0, [wnd](){ wnd->resize( 99, 99 ); } );
+					QTimer::singleShot( 0, [wnd](){ wnd->adjustSize(); wnd->resize( 99, 99 ); } );
 				} );
 				container->setVisible( false );
 				{
@@ -875,8 +885,7 @@ void SurfaceInspector::BuildDialog(){
 
 				QObject::connect( frame, &QGroupBox::clicked, [container, wnd = GetWidget()]( bool checked ){
 					container->setVisible( checked );
-					wnd->adjustSize();
-					QTimer::singleShot( 0, [wnd](){ wnd->resize( 99, 99 ); } );
+					QTimer::singleShot( 0, [wnd](){ wnd->adjustSize(); wnd->resize( 99, 99 ); } );
 				} );
 				container->setVisible( false );
 				{
@@ -914,6 +923,7 @@ void SurfaceInspector::BuildDialog(){
 				}
 			}
 		}
+		vbox->addStretch( 1 );
 	}
 }
 
@@ -1002,17 +1012,17 @@ void SurfaceInspector::Update(){
    ===============
  */
 void SurfaceInspector::ApplyShader(){
-	const auto name = StringOutputStream( 256 )( GlobalTexturePrefix_get(), PathCleaned( m_textureEntry->text().toLatin1().constData() ) );
+	const auto name = StringStream<64>( GlobalTexturePrefix_get(), PathCleaned( m_textureEntry->text().toLatin1().constData() ) );
 
 	// TTimo: detect and refuse invalid texture names (at least the ones with spaces)
-	if ( !texdef_name_valid( name.c_str() ) ) {
-		globalErrorStream() << "invalid texture name '" << name.c_str() << "'\n";
+	if ( !texdef_name_valid( name ) ) {
+		globalErrorStream() << "invalid texture name '" << name << "'\n";
 		SurfaceInspector_queueDraw();
 		return;
 	}
 
 	UndoableCommand undo( "textureNameSetSelected" );
-	Select_SetShader( name.c_str() );
+	Select_SetShader( name );
 }
 #if 0
 void SurfaceInspector::ApplyTexdef(){
@@ -1033,45 +1043,40 @@ void SurfaceInspector::ApplyTexdef(){
 #endif
 void SurfaceInspector::ApplyTexdef_HShift(){
 	const float value = m_hshiftIncrement.m_spin->value();
-	StringOutputStream command;
-	command << "textureProjectionSetSelected -hShift " << value;
-	UndoableCommand undo( command.c_str() );
+	const auto command = StringStream<64>( "textureProjectionSetSelected -hShift ", value );
+	UndoableCommand undo( command );
 	Select_SetTexdef( &value, 0, 0, 0, 0 );
 	Patch_SetTexdef( &value, 0, 0, 0, 0 );
 }
 
 void SurfaceInspector::ApplyTexdef_VShift(){
 	const float value = m_vshiftIncrement.m_spin->value();
-	StringOutputStream command;
-	command << "textureProjectionSetSelected -vShift " << value;
-	UndoableCommand undo( command.c_str() );
+	const auto command = StringStream<64>( "textureProjectionSetSelected -vShift ", value );
+	UndoableCommand undo( command );
 	Select_SetTexdef( 0, &value, 0, 0, 0 );
 	Patch_SetTexdef( 0, &value, 0, 0, 0 );
 }
 
 void SurfaceInspector::ApplyTexdef_HScale(){
 	const float value = m_hscaleIncrement.m_spin->value();
-	StringOutputStream command;
-	command << "textureProjectionSetSelected -hScale " << value;
-	UndoableCommand undo( command.c_str() );
+	const auto command = StringStream<64>( "textureProjectionSetSelected -hScale ", value );
+	UndoableCommand undo( command );
 	Select_SetTexdef( 0, 0, &value, 0, 0 );
 	Patch_SetTexdef( 0, 0, &value, 0, 0 );
 }
 
 void SurfaceInspector::ApplyTexdef_VScale(){
 	const float value = m_vscaleIncrement.m_spin->value();
-	StringOutputStream command;
-	command << "textureProjectionSetSelected -vScale " << value;
-	UndoableCommand undo( command.c_str() );
+	const auto command = StringStream<64>( "textureProjectionSetSelected -vScale ", value );
+	UndoableCommand undo( command );
 	Select_SetTexdef( 0, 0, 0, &value, 0 );
 	Patch_SetTexdef( 0, 0, 0, &value, 0 );
 }
 
 void SurfaceInspector::ApplyTexdef_Rotation(){
 	const float value = m_rotateIncrement.m_spin->value();
-	StringOutputStream command;
-	command << "textureProjectionSetSelected -rotation " << static_cast<float>( float_to_integer( value * 100.f ) ) / 100.f;;
-	UndoableCommand undo( command.c_str() );
+	const auto command = StringStream<64>( "textureProjectionSetSelected -rotation ", static_cast<float>( float_to_integer( value * 100.f ) ) / 100.f );
+	UndoableCommand undo( command );
 	Select_SetTexdef( 0, 0, 0, 0, &value );
 	Patch_SetTexdef( 0, 0, 0, 0, &value );
 }
@@ -1385,7 +1390,7 @@ void Face_setTexture( Face& face, const char* shader, const FaceTexture& clipboa
 			}
 
 			const Quaternion rotation = quaternion_for_unit_vectors( clipboard.m_plane.normal(), face.getPlane().plane3().normal() );
-//			globalOutputStream() << "rotation: " << rotation.x() << " " << rotation.y() << " " << rotation.z() << " " << rotation.w() << " " << "\n";
+//			globalOutputStream() << "rotation: " << rotation.x() << ' ' << rotation.y() << ' ' << rotation.z() << ' ' << rotation.w() << ' ' << '\n';
 			Matrix4 transform = g_matrix4_identity;
 			matrix4_pivoted_rotate_by_quaternion( transform, rotation, line.origin );
 

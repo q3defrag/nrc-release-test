@@ -88,7 +88,7 @@ Vector3b ColorToBytes( const Vector3& color, float scale ){
 
 	if ( lightmapExposure == 0 ) {
 		/* clamp with color normalization */
-		max = VectorMax( sample );
+		max = vector3_max_component( sample );
 		if ( max > maxLight ) {
 			sample *= ( maxLight / max );
 		}
@@ -98,7 +98,7 @@ Vector3b ColorToBytes( const Vector3& color, float scale ){
 		inv = 1.f / lightmapExposure;
 		//Exposure
 
-		max = VectorMax( sample );
+		max = vector3_max_component( sample );
 
 		dif = ( 1 -  exp( -max * inv ) )  *  255;
 
@@ -123,7 +123,7 @@ Vector3b ColorToBytes( const Vector3& color, float scale ){
 			sample[i] = std::max( 0.f, lightmapContrast * ( sample[i] - 128 ) + 128 );
 		}
 		/* clamp with color normalization */
-		max = VectorMax( sample );
+		max = vector3_max_component( sample );
 		if ( max > 255.0f ) {
 			sample *= ( 255.0f / max );
 		}
@@ -200,12 +200,6 @@ void SmoothNormals(){
 			if ( ds.surfaceType == MST_TRIANGLE_SOUP ) {
 				smoothed[ f ] = true;
 			}
-		}
-
-		/* ydnar: optional force-to-trisoup */
-		if ( trisoup && ds.surfaceType == MST_PLANAR ) {
-			ds.surfaceType = MST_TRIANGLE_SOUP;
-			ds.lightmapNum[ 0 ] = -3;
 		}
 	}
 

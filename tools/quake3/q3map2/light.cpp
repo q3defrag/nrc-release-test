@@ -30,6 +30,8 @@
 
 /* dependencies */
 #include "q3map2.h"
+#include "bspfile_rbsp.h"
+#include <set>
 
 
 
@@ -129,8 +131,8 @@ public:
 			std::vector<const image_t*> images;
 			for( const auto suffix : { "_lf", "_rt", "_ft", "_bk", "_up", "_dn" } )
 			{
-				if( nullptr == images.emplace_back( ImageLoad( StringOutputStream( 64 )( skyParmsImageBase, suffix ) ) ) ){
-					Sys_Warning( "Couldn't find image %s\n", StringOutputStream( 64 )( skyParmsImageBase, suffix ).c_str() );
+				if( nullptr == images.emplace_back( ImageLoad( StringStream<64>( skyParmsImageBase, suffix ) ) ) ){
+					Sys_Warning( "Couldn't find image %s\n", StringStream<64>( skyParmsImageBase, suffix ).c_str() );
 					return;
 				}
 			}
@@ -330,8 +332,8 @@ static void CreateEntityLights(){
 			continue;
 		}
 
-		/* lights with target names (and therefore styles) are only parsed from BSP */
-		if ( !strEmpty( e.valueForKey( "targetname" ) ) && i >= numBSPEntities ) {
+		/* lights with target names (and therefore styles in RBSP) are only parsed from BSP */
+		if ( !strEmpty( e.valueForKey( "targetname" ) ) && g_game->load == LoadRBSPFile && i >= numBSPEntities ) {
 			continue;
 		}
 
@@ -427,7 +429,7 @@ static void CreateEntityLights(){
 		/* set origin */
 		light.origin = e.vectorForKey( "origin" );
 		e.read_keyvalue( light.style, "_style", "style" );
-		if ( light.style < LS_NORMAL || light.style >= LS_NONE ) {
+		if ( !style_is_valid( light.style ) ) {
 			Error( "Invalid lightstyle (%d) on entity %zu", light.style, i );
 		}
 
@@ -1780,11 +1782,144 @@ static void SetupGrid(){
 
 
 /*
+	Handles writing optional hacks after -light and each -bounce pass
+*/
+
+static void WriteBSPFileAfterLight( const char *bspFileName ){
+	const auto lmPathStart = String64( "maps/", mapName, '/' );
+	std::set<int> lmIds;
+	// find external lm ids, if any
+	// stupidly search in shader text, ( numExtLightmaps > 0 ) check wont work when e.g. deluxemaps
+	// also would excessively include lightstyles using $lightmap reference
+	if( !externalLightmaps ){ // unless native ext lms: e.g. in ET with lightstyles hack preloading lm imgs breaks r_mapOverbrightBits
+		for ( const shaderInfo_t& si : Span( shaderInfo, numShaderInfo ) )
+		{
+			if ( si.custom && !strEmptyOrNull( si.shaderText ) ) {
+				const char *txt = si.shaderText;
+				while( ( txt = strstr( txt, lmPathStart ) ) ){
+					txt += strlen( lmPathStart );
+					int lmindex;
+					int okcount = 0;
+					if( sscanf( txt, EXTERNAL_LIGHTMAP "%n", &lmindex, &okcount ) && okcount == strlen( EXTERNAL_LIGHTMAP ) ){
+						lmIds.insert( lmindex );
+					}
+				}
+			}
+		}
+	}
+
+	if( !lmIds.empty() || trisoup ){
+		std::vector<bspModel_t> bakModels;
+		std::vector<int> bakLeafSurfaces;
+		std::vector<bspBrushSide_t> bakBrushSides;
+		std::vector<bspDrawSurface_t> bakDrawSurfaces;
+
+		if( !lmIds.empty() ){
+			{ // write nomipmaps shaders
+				/* dummy check */
+				ENSURE( !mapShaderFile.empty() );
+
+				/* open shader file */
+				FILE *file = fopen( mapShaderFile.c_str(), "at" ); // append to existing file
+				if ( file == NULL ) {
+					Sys_Warning( "Unable to open map shader file %s for writing\n", mapShaderFile.c_str() );
+					return;
+				}
+
+				/* print header */
+				fprintf( file, "\n// Shaders to force nomipmaps flag on external lightmap images:\n\n" );
+
+				/* devise les shaders: max 8 stages, max 8 maps in animmap */
+				size_t shaderId = 0;
+				for( auto it = lmIds.cbegin(); it != lmIds.cend(); ){
+					fprintf( file, "%s\n{\n\tnomipmaps\n", String64( lmPathStart, "nomipmaps", shaderId++ ).c_str() );
+					for( size_t i = 0; i < 8 && it != lmIds.cend(); ++i ){
+						fprintf( file, "\t{\n\t\tanimmap .0042" );
+						for( size_t j = 0; j < 8 && it != lmIds.cend(); ++j, ++it ){
+							fprintf( file, " %s" EXTERNAL_LIGHTMAP, lmPathStart.c_str(), *it );
+						}
+						fprintf( file, "\n\t}\n" );
+					}
+					fprintf( file, "}\n\n" );
+				}
+
+				/* close the shader */
+				fflush( file );
+				fclose( file );
+			}
+
+			const size_t numNomipSurfs = ( lmIds.size() + 63 ) / 64;
+			// prepend nomip surfs to the list so that they are read by engine first
+			for( size_t su = 0; su < numNomipSurfs; ++su ){
+				auto& out = bakDrawSurfaces.emplace_back();
+
+				out.surfaceType = MST_FLARE;
+				out.shaderNum = EmitShader( String64( lmPathStart, "nomipmaps", su ), nullptr, nullptr );
+				out.fogNum = -1;
+
+				for ( int i = 0; i < MAX_LIGHTMAPS; i++ )
+				{
+					out.lightmapNum[ i ] = -3;
+					out.lightmapStyles[ i ] = LS_NONE;
+					out.vertexStyles[ i ] = LS_NONE;
+				}
+			}
+
+			bakDrawSurfaces.insert( bakDrawSurfaces.cend(), bspDrawSurfaces.cbegin(), bspDrawSurfaces.cend() );
+			// backup original bsp lumps
+			bakDrawSurfaces.swap( bspDrawSurfaces );
+
+			bakModels = bspModels;
+			bakModels.swap( bspModels );
+			bakLeafSurfaces = bspLeafSurfaces;
+			bakLeafSurfaces.swap( bspLeafSurfaces );
+			bakBrushSides = bspBrushSides;
+			bakBrushSides.swap( bspBrushSides );
+			// repair indices
+			for( auto&& index : bspLeafSurfaces )
+				index += numNomipSurfs;
+			for( auto&& side : bspBrushSides )
+				side.surfaceNum += numNomipSurfs;
+			for( auto&& model : bspModels )
+				model.firstBSPSurface += numNomipSurfs;
+		}
+
+		/* ydnar: optional force-to-trisoup */
+		if( trisoup ){
+			if( bakDrawSurfaces.empty() ){ // backup if not yet
+				bakDrawSurfaces = bspDrawSurfaces;
+				bakDrawSurfaces.swap( bspDrawSurfaces );
+			}
+			for( auto& ds : bspDrawSurfaces ){
+				if( ds.surfaceType == MST_PLANAR ){
+					ds.surfaceType = MST_TRIANGLE_SOUP;
+					ds.lightmapNum[ 0 ] = -3;
+				}
+			}
+		}
+
+		WriteBSPFile( bspFileName );
+		// restore original bsp lumps
+		bakDrawSurfaces.swap( bspDrawSurfaces );
+		if( !bakModels.empty() || !bakLeafSurfaces.empty() || !bakBrushSides.empty() ){
+			bakModels.swap( bspModels );
+			bakLeafSurfaces.swap( bspLeafSurfaces );
+			bakBrushSides.swap( bspBrushSides );
+		}
+	}
+	else{ // no hacks to apply 😵
+		WriteBSPFile( bspFileName );
+	}
+}
+
+
+
+/*
    LightWorld()
    does what it says...
  */
 
-static void LightWorld( bool fastAllocate ){
+static void LightWorld( bool fastAllocate, bool bounceStore ){
 	Vector3 color;
 	float f;
 	int b, bt;
@@ -1916,10 +2051,11 @@ static void LightWorld( bool fastAllocate ){
 	while ( bounce > 0 )
 	{
 		/* store off the bsp between bounces */
-		StoreSurfaceLightmaps( fastAllocate );
-		UnparseEntities();
-		Sys_Printf( "Writing %s\n", source );
-		WriteBSPFile( source );
+		StoreSurfaceLightmaps( fastAllocate, bounceStore );
+		if( bounceStore ){
+			UnparseEntities();
+			WriteBSPFileAfterLight( source );
+		}
 
 		/* note it */
 		Sys_Printf( "\n--- Radiosity (bounce %d of %d) ---\n", b, bt );
@@ -1938,7 +2074,10 @@ static void LightWorld( bool fastAllocate ){
 		SetupEnvelopes( false, fastbounce );
 		if ( lights.empty() ) {
 			Sys_Printf( "No diffuse light to calculate, ending radiosity.\n" );
-			break;
+			if( bounceStore ){ // already stored, just quit
+				return;
+			}
+			break; // break to StoreSurfaceLightmaps
 		}
 
 		/* add to lightgrid */
@@ -1981,6 +2120,13 @@ static void LightWorld( bool fastAllocate ){
 		bounce--;
 		b++;
 	}
+
+	/* ydnar: store off lightmaps */
+	StoreSurfaceLightmaps( fastAllocate, true );
+
+	/* write out the bsp */
+	UnparseEntities();
+	WriteBSPFileAfterLight( source );
 }
 
 
@@ -1995,6 +2141,7 @@ int LightMain( Args& args ){
 	int lightmapMergeSize = 0;
 	bool lightSamplesInsist = false;
 	bool fastAllocate = true;
+	bool bounceStore = true;
 
 
 	/* note it */
@@ -2164,7 +2311,6 @@ int LightMain( Args& args ){
 			spotScale *= f;
 			areaScale *= f;
 			skyScale *= f;
-			bounceScale *= f;
 			Sys_Printf( "All light scaled by %f\n", f );
 		}
 
@@ -2441,6 +2587,11 @@ int LightMain( Args& args ){
 		while ( args.takeArg( "-bounceonly" ) ) {
 			bounceOnly = true;
 			Sys_Printf( "Storing bounced light (radiosity) only\n" );
+		}
+
+		while ( args.takeArg( "-nobouncestore" ) ) {
+			bounceStore = false;
+			Sys_Printf( "Not storing BSP, lightmap and shader files between bounces\n" );
 		}
 
 		while ( args.takeArg( "-nocollapse" ) ) {
@@ -2812,15 +2963,7 @@ int LightMain( Args& args ){
 	SetupTraceNodes();
 
 	/* light the world */
-	LightWorld( fastAllocate );
-
-	/* ydnar: store off lightmaps */
-	StoreSurfaceLightmaps( fastAllocate );
-
-	/* write out the bsp */
-	UnparseEntities();
-	Sys_Printf( "Writing %s\n", source );
-	WriteBSPFile( source );
+	LightWorld( fastAllocate, bounceStore );
 
 	/* ydnar: export lightmaps */
 	if ( exportLightmaps && !externalLightmaps ) {

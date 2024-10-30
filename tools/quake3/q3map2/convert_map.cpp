@@ -30,6 +30,7 @@
 
 /* dependencies */
 #include "q3map2.h"
+#include "bspfile_rbsp.h"
 
 
 
@@ -864,11 +865,14 @@ static int ConvertBSPToMap_Ext( char *bspName, bool brushPrimitives ){
 		buildBrush.original = &buildBrush;
 	}
 
+	if( g_game->load == LoadRBSPFile )
+		UnSetLightStyles();
+
 	/* note it */
 	Sys_Printf( "--- Convert BSP to MAP ---\n" );
 
 	/* create map filename from the bsp name */
-	auto name = StringOutputStream( 256 )( PathExtensionless( bspName ), "_converted.map" );
+	const auto name = StringStream( PathExtensionless( bspName ), "_converted.map" );
 	Sys_Printf( "writing %s\n", name.c_str() );
 
 	/* open it */

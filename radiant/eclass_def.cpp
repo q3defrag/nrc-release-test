@@ -70,7 +70,6 @@ StaticRegisterModule staticRegisterEclassDef( StaticEclassDefModule::instance() 
 
 
 char com_token[1024];
-bool com_eof;
 
 /*
    ==============
@@ -95,7 +94,6 @@ skipwhite:
 	while ( ( c = *data ) <= ' ' )
 	{
 		if ( c == 0 ) {
-			com_eof = true;
 			return 0;           // end of file;
 		}
 		data++;
@@ -248,34 +246,34 @@ EntityClass *Eclass_InitFromText( const char *text ){
 		}
 	}
 
-	char parms[256];
-	// get the flags
-	{
-		// copy to the first /n
-		char* p = parms;
-		while ( *text && *text != '\n' )
-			*p++ = *text++;
-		*p = 0;
-		text++;
+	StringRange parms( text, text );
+	{ // get the flags: advance to the first \n
+		while ( *text && *text++ != '\n' ){};
+		parms = { parms.begin(), text };
 	}
 
 	{
 		// any remaining words are parm flags
-		const char* p = parms;
+		const char* p = parms.begin();
 		for ( std::size_t i = 0; i < MAX_FLAGS; i++ )
 		{
 			p = COM_Parse( p );
-			if ( !p ) {
+			if ( p == nullptr || p > parms.end() ) {
 				break;
 			}
-			strcpy( e->flagnames[i], Get_COM_Token() );
+			if( string_equal( Get_COM_Token(), "-" )
+			 || string_equal( Get_COM_Token(), "x" )
+			 || string_equal_prefix_nocase( Get_COM_Token(), "unused" ) ){
+				continue;
+			}
+			strncpy( e->flagnames[i], Get_COM_Token(), std::size( e->flagnames[i] ) - 1 );
 		}
 	}
 
 	e->m_comments = text;
 
 	setSpecialLoad( e, "model=", e->m_modelpath );
-	e->m_modelpath = StringOutputStream( 256 )( PathCleaned( e->m_modelpath.c_str() ) ).c_str();
+	e->m_modelpath = StringStream<64>( PathCleaned( e->m_modelpath.c_str() ) );
 
 	if ( !e->fixedsize ) {
 		EntityClass_insertAttribute( *e, "angle", EntityClassAttribute( "direction", "Direction" ) );
@@ -298,7 +296,7 @@ void Eclass_ScanFile( EntityClassCollector& collector, const char *filename ){
 		globalErrorStream() << "ScanFile: " << filename << " not found\n";
 		return;
 	}
-	globalOutputStream() << "ScanFile: " << filename << "\n";
+	globalOutputStream() << "ScanFile: " << filename << '\n';
 
 	enum EParserState
 	{
@@ -335,6 +333,9 @@ void Eclass_ScanFile( EntityClassCollector& collector, const char *filename ){
 				p = quakeEd;
 				state = eParseQuakeED;
 			}
+			else{
+				state = eParseDefault;
+			}
 			break;
 		case eParseComment:
 			if ( c == '\n' ) {
@@ -369,7 +370,7 @@ void Eclass_ScanFile( EntityClassCollector& collector, const char *filename ){
 					collector.insert( e );
 				}
 				else{
-					globalErrorStream() << "Error parsing: " << debugname << " in " << filename << "\n";
+					globalErrorStream() << "Error parsing: " << debugname << " in " << filename << '\n';
 				}
 
 				buffer.clear();

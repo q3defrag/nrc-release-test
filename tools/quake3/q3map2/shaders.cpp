@@ -268,7 +268,7 @@ void BeginMapShaderFile( const char *mapFile ){
 	mapName( PathFilename( mapFile ) );
 
 	/* append ../scripts/q3map2_<mapname>.shader */
-	mapShaderFile = StringOutputStream( 256 )( PathFilenameless( mapFile ), "../", g_game->shaderPath, "/q3map2_", mapName.c_str(), ".shader" );
+	mapShaderFile = StringStream( PathFilenameless( mapFile ), "../", g_game->shaderPath, "/q3map2_", mapName.c_str(), ".shader" );
 	Sys_FPrintf( SYS_VRB, "Map has shader script %s\n", mapShaderFile.c_str() );
 
 	/* remove it */
@@ -373,7 +373,7 @@ const shaderInfo_t *CustomShader( const shaderInfo_t *si, const char *find, char
 		               "\t}\n"
 		               "\tq3map_styleMarker\n"
 		               "\t{\n"
-		               "\t\tmap %s\n"
+		               "\t\tmap %s.tga\n"
 		               "\t\tblendFunc GL_DST_COLOR GL_ZERO\n"
 		               "\t\trgbGen identity\n"
 		               "\t}\n"
@@ -388,7 +388,7 @@ const shaderInfo_t *CustomShader( const shaderInfo_t *si, const char *find, char
 		               "{ // Q3Map2 defaulted (implicitMask)\n"
 		               "\tcull none\n"
 		               "\t{\n"
-		               "\t\tmap %s\n"
+		               "\t\tmap %s.tga\n"
 		               "\t\talphaFunc GE128\n"
 		               "\t\tdepthWrite\n"
 		               "\t}\n"
@@ -399,7 +399,7 @@ const shaderInfo_t *CustomShader( const shaderInfo_t *si, const char *find, char
 		               "\t}\n"
 		               "\tq3map_styleMarker\n"
 		               "\t{\n"
-		               "\t\tmap %s\n"
+		               "\t\tmap %s.tga\n"
 		               "\t\tblendFunc GL_DST_COLOR GL_ZERO\n"
 		               "\t\tdepthFunc equal\n"
 		               "\t\trgbGen identity\n"
@@ -416,7 +416,7 @@ const shaderInfo_t *CustomShader( const shaderInfo_t *si, const char *find, char
 		               "{ // Q3Map2 defaulted (implicitBlend)\n"
 		               "\tcull none\n"
 		               "\t{\n"
-		               "\t\tmap %s\n"
+		               "\t\tmap %s.tga\n"
 		               "\t\tblendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA\n"
 		               "\t}\n"
 		               "\t{\n"
@@ -543,13 +543,14 @@ static shaderInfo_t *AllocShaderInfo(){
 
 	/* allocate? */
 	if ( shaderInfo == NULL ) {
-		shaderInfo = safe_malloc( sizeof( shaderInfo_t ) * MAX_SHADER_INFO );
+		shaderInfo = safe_malloc( sizeof( shaderInfo_t ) * max_shader_info );
 		numShaderInfo = 0;
 	}
 
 	/* bounds check */
-	if ( numShaderInfo == MAX_SHADER_INFO ) {
-		Error( "MAX_SHADER_INFO exceeded. Remove some PK3 files or shader scripts from shaderlist.txt and try again." );
+	if ( numShaderInfo == max_shader_info ) {
+		Error( "max_shader_info (%d) exceeded. Remove some PK3 files or shader scripts from shaderlist.txt and try again."
+		       " Or consider -maxshaderinfo to increase.", max_shader_info );
 	}
 	si = &shaderInfo[ numShaderInfo ];
 	numShaderInfo++;
@@ -759,7 +760,7 @@ shaderInfo_t *ShaderInfoForShader( const char *shaderName ){
 	}
 
 	/* strip off extension */
-	auto shader = String64()( PathExtensionless( shaderName ) );
+	String64 shader( PathExtensionless( shaderName ) );
 
 	/* search for it */
 	deprecationDepth = 0;
@@ -841,7 +842,8 @@ static void ParseShaderFile( const char *filename ){
 		shaderInfo_t *si = AllocShaderInfo();
 
 		/* ignore ":q3map" suffix */
-		if( striEqualSuffix( token, ":q3map" ) )
+		const bool isQ3mapOnlyShader = striEqualSuffix( token, ":q3map" );
+		if( isQ3mapOnlyShader )
 			si->shader << StringRange( token, strlen( token ) - strlen( ":q3map" ) );
 		else
 			si->shader << token;
@@ -996,7 +998,7 @@ static void ParseShaderFile( const char *filename ){
 					si->implicitImagePath = si->shader;
 				}
 				else{
-					si->implicitImagePath = token;
+					si->implicitImagePath( PathExtensionless( token ) );
 				}
 			}
 
@@ -1007,7 +1009,7 @@ static void ParseShaderFile( const char *filename ){
 					si->implicitImagePath = si->shader;
 				}
 				else{
-					si->implicitImagePath = token;
+					si->implicitImagePath( PathExtensionless( token ) );
 				}
 			}
 
@@ -1018,7 +1020,7 @@ static void ParseShaderFile( const char *filename ){
 					si->implicitImagePath = si->shader;
 				}
 				else{
-					si->implicitImagePath = token;
+					si->implicitImagePath( PathExtensionless( token ) );
 				}
 			}
 
@@ -1256,7 +1258,7 @@ static void ParseShaderFile( const char *filename ){
 				/* q3map_lightStyle (sof2/jk2 lightstyle) */
 				else if ( striEqual( token, "q3map_lightStyle" ) ) {
 					text.GetToken( false );
-					si->lightStyle = std::clamp( atoi( token ), 0, LS_NONE );
+					si->lightStyle = std::clamp( atoi( token ), LS_NORMAL, LS_NONE );
 				}
 
 				/* wolf: q3map_lightRGB <red> <green> <blue> */
@@ -1732,7 +1734,7 @@ static void ParseShaderFile( const char *filename ){
 				/* q3map_material (sof2) */
 				else if ( striEqual( token, "q3map_material" ) ) {
 					text.GetToken( false );
-					if ( !ApplySurfaceParm( StringOutputStream( 64 )( "*mat_", token ), &si->contentFlags, &si->surfaceFlags, &si->compileFlags ) ) {
+					if ( !ApplySurfaceParm( StringStream<64>( "*mat_", token ), &si->contentFlags, &si->surfaceFlags, &si->compileFlags ) ) {
 						Sys_Warning( "Unknown material \"%s\"\n", token );
 					}
 				}
@@ -1773,10 +1775,13 @@ static void ParseShaderFile( const char *filename ){
 		}
 
 		/* copy shader text to the shaderinfo */
-		text.text << '\n';
-		si->shaderText = copystring( text.text );
-		//%	if( vector3_length( si->vecs[ 0 ] ) )
-		//%		Sys_Printf( "%s\n", si->shaderText );
+		/* unless it's :q3map stageless shader: shaderText of those is not usable for custom shaders composition */
+		if( !( isQ3mapOnlyShader && !si->hasPasses ) ){
+			text.text << '\n';
+			si->shaderText = copystring( text.text );
+			//%	if( vector3_length( si->vecs[ 0 ] ) )
+			//%		Sys_Printf( "%s\n", si->shaderText );
+		}
 
 		/* ydnar: clear shader text buffer */
 		text.clear();
@@ -1857,7 +1862,7 @@ void LoadShaderInfo(){
 	}
 
 	/* we can pile up several shader files, the one in baseq3 and ones in the mod dir or other spots */
-	const auto filename = StringOutputStream( 64 )( g_game->shaderPath, "/shaderlist.txt" );
+	const auto filename = StringStream<64>( g_game->shaderPath, "/shaderlist.txt" );
 	const int count = vfsGetFileCount( filename );
 
 	/* load them all */
@@ -1894,7 +1899,7 @@ void LoadShaderInfo(){
 	/* parse the shader files */
 	for ( const CopiedString& file : shaderFiles )
 	{
-		ParseShaderFile( StringOutputStream( 64 )( g_game->shaderPath, '/', file ) );
+		ParseShaderFile( StringStream<64>( g_game->shaderPath, '/', file ) );
 	}
 
 	/* emit some statistics */

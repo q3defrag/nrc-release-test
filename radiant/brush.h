@@ -173,12 +173,12 @@ inline void planepts_quantise( PlanePoints planepts, double snap ){
 	vector3_snap( planepts[2], snap );
 }
 
-inline float vector3_max_component( const Vector3& vec3 ){
+inline float vector3_max_abs_component( const Vector3& vec3 ){
 	return std::max( fabsf( vec3[0] ), std::max( fabsf( vec3[1] ), fabsf( vec3[2] ) ) );
 }
 
 inline void edge_snap( Vector3& edge, double snap ){
-	float scale = static_cast<float>( ceil( fabs( snap / vector3_max_component( edge ) ) ) );
+	float scale = static_cast<float>( ceil( fabs( snap / vector3_max_abs_component( edge ) ) ) );
 	if ( scale > 0.0f ) {
 		vector3_scale( edge, scale );
 	}
@@ -605,9 +605,9 @@ public:
 };
 
 inline void planepts_print( const PlanePoints& planePoints, TextOutputStream& ostream ){
-	ostream << "( " << planePoints[0][0] << " " << planePoints[0][1] << " " << planePoints[0][2] << " ) "
-	        << "( " << planePoints[1][0] << " " << planePoints[1][1] << " " << planePoints[1][2] << " ) "
-	        << "( " << planePoints[2][0] << " " << planePoints[2][1] << " " << planePoints[2][2] << " )";
+	ostream << "( " << planePoints[0][0] << ' ' << planePoints[0][1] << ' ' << planePoints[0][2] << " ) "
+	        << "( " << planePoints[1][0] << ' ' << planePoints[1][1] << ' ' << planePoints[1][2] << " ) "
+	        << "( " << planePoints[2][0] << ' ' << planePoints[2][1] << ' ' << planePoints[2][2] << " )";
 }
 
 
@@ -688,7 +688,7 @@ public:
 			if ( check_plane_is_integer( m_planepts ) ) {
 				globalErrorStream() << "non-integer planepts: ";
 				planepts_print( m_planepts, globalErrorStream() );
-				globalErrorStream() << "\n";
+				globalErrorStream() << '\n';
 			}
 #endif
 			m_planeCached = plane3_for_points( m_planepts );
@@ -1110,14 +1110,7 @@ public:
 		else if( g_bp_globals.m_texdefTypeId == TEXDEFTYPEID_VALVE ){
 			const DoubleVector3 from = vector3_normalised( vector3_cross( m_texdefTransformed.m_basis_s, m_texdefTransformed.m_basis_t ) );
 			const DoubleVector3 to = matrix4_transformed_normal( matrix, from );
-			Quaternion quat = quaternion_for_unit_vectors( from, to );
-			if( quat.w() != quat.w() ){ //handle 180` cases
-				if( vector3_max_abs_component_index( from ) == 2 )
-					quat = Quaternion( g_vector3_axis_y, 0 );
-				else
-					quat = Quaternion( g_vector3_axis_z, 0 );
-			}
-			const Matrix4 mat = matrix4_rotation_for_quaternion( quat );
+			const Matrix4 mat = matrix4_rotation_for_quaternion( quaternion_for_unit_vectors_safe( from, to ) );
 			m_texdefTransformed.m_basis_s = vector3_normalised( matrix4_transformed_direction( mat, m_texdefTransformed.m_basis_s ) );
 			m_texdefTransformed.m_basis_t = vector3_normalised( matrix4_transformed_direction( mat, m_texdefTransformed.m_basis_t ) );
 		}
@@ -1689,7 +1682,7 @@ public:
 	Brush& operator=( const Brush& other ) = delete;
 
 	void setDoom3GroupOrigin( const Vector3& origin ){
-		//globalOutputStream() << "func_static origin before: " << m_funcStaticOrigin << " after: " << origin << "\n";
+		//globalOutputStream() << "func_static origin before: " << m_funcStaticOrigin << " after: " << origin << '\n';
 		for ( Faces::iterator i = m_faces.begin(); i != m_faces.end(); ++i )
 		{
 			( *i )->getPlane().m_funcStaticOrigin = origin;
@@ -2172,7 +2165,7 @@ public:
 				buffer[!swap].clear();
 
 #if BRUSH_CONNECTIVITY_DEBUG
-				globalOutputStream() << "clip vs face: " << i << "\n";
+				globalOutputStream() << "clip vs face: " << i << '\n';
 #endif
 
 				{
@@ -2185,7 +2178,7 @@ public:
 				for ( FixedWinding::Points::iterator k = buffer[!swap].points.begin(), j = buffer[!swap].points.end() - 1; k != buffer[!swap].points.end(); j = k, ++k )
 				{
 					if ( vector3_length_squared( vector3_subtracted( ( *k ).vertex, ( *j ).vertex ) ) < 1 ) {
-						globalOutputStream() << "v: " << std::distance( buffer[!swap].points.begin(), j ) << " tiny edge adjacent to face " << ( *j ).adjacent << "\n";
+						globalOutputStream() << "v: " << std::distance( buffer[!swap].points.begin(), j ) << " tiny edge adjacent to face " << ( *j ).adjacent << '\n';
 					}
 				}
 #endif
@@ -2204,7 +2197,7 @@ public:
 		for ( Winding::iterator i = winding.begin(), j = winding.end() - 1; i != winding.end(); j = i, ++i )
 		{
 			if ( vector3_length_squared( vector3_subtracted( ( *i ).vertex, ( *j ).vertex ) ) < 1 ) {
-				globalOutputStream() << "v: " << std::distance( winding.begin(), j ) << " tiny edge adjacent to face " << ( *j ).adjacent << "\n";
+				globalOutputStream() << "v: " << std::distance( winding.begin(), j ) << " tiny edge adjacent to face " << ( *j ).adjacent << '\n';
 			}
 		}
 #endif
@@ -2373,7 +2366,7 @@ private:
 				std::size_t next = Winding_next( winding, index );
 				if ( Edge_isDegenerate( winding[index].vertex, winding[next].vertex ) ) {
 #if BRUSH_DEGENERATE_DEBUG
-					globalOutputStream() << "Brush::buildWindings: face " << i << ": degenerate edge adjacent to " << winding[index].adjacent << "\n";
+					globalOutputStream() << "Brush::buildWindings: face " << i << ": degenerate edge adjacent to " << winding[index].adjacent << '\n';
 #endif
 					Winding& other = m_faces[winding[index].adjacent]->getWinding();
 					std::size_t adjacent = Winding_FindAdjacent( other, i );
@@ -2399,7 +2392,7 @@ private:
 
 			if ( degen.numpoints == 2 ) {
 #if BRUSH_DEGENERATE_DEBUG
-				globalOutputStream() << "Brush::buildWindings: face " << i << ": degenerate winding adjacent to " << degen[0].adjacent << ", " << degen[1].adjacent << "\n";
+				globalOutputStream() << "Brush::buildWindings: face " << i << ": degenerate winding adjacent to " << degen[0].adjacent << ", " << degen[1].adjacent << '\n';
 #endif
 				// this is an "edge" face, where the plane touches the edge of the brush
 				{
@@ -2407,7 +2400,7 @@ private:
 					std::size_t index = Winding_FindAdjacent( winding, i );
 					if ( index != c_brush_maxFaces ) {
 #if BRUSH_DEGENERATE_DEBUG
-						globalOutputStream() << "Brush::buildWindings: face " << degen[0].adjacent << ": remapping adjacent " << winding[index].adjacent << " to " << degen[1].adjacent << "\n";
+						globalOutputStream() << "Brush::buildWindings: face " << degen[0].adjacent << ": remapping adjacent " << winding[index].adjacent << " to " << degen[1].adjacent << '\n';
 #endif
 						winding[index].adjacent = degen[1].adjacent;
 					}
@@ -2418,7 +2411,7 @@ private:
 					std::size_t index = Winding_FindAdjacent( winding, i );
 					if ( index != c_brush_maxFaces ) {
 #if BRUSH_DEGENERATE_DEBUG
-						globalOutputStream() << "Brush::buildWindings: face " << degen[1].adjacent << ": remapping adjacent " << winding[index].adjacent << " to " << degen[0].adjacent << "\n";
+						globalOutputStream() << "Brush::buildWindings: face " << degen[1].adjacent << ": remapping adjacent " << winding[index].adjacent << " to " << degen[0].adjacent << '\n';
 #endif
 						winding[index].adjacent = degen[0].adjacent;
 					}
@@ -2442,7 +2435,7 @@ private:
 					std::size_t next = Winding_next( winding, j );
 					if ( winding[j].adjacent == winding[next].adjacent ) {
 #if BRUSH_DEGENERATE_DEBUG
-						globalOutputStream() << "Brush::buildWindings: face " << i << ": removed duplicate edge adjacent to face " << winding[j].adjacent << "\n";
+						globalOutputStream() << "Brush::buildWindings: face " << i << ": removed duplicate edge adjacent to face " << winding[j].adjacent << '\n';
 #endif
 						winding.erase( winding.begin() + next );
 					}
@@ -2466,13 +2459,13 @@ private:
 				for ( Winding::iterator j = winding.begin(); j != winding.end(); )
 				{
 #if BRUSH_CONNECTIVITY_DEBUG
-					globalOutputStream() << "Brush::buildWindings: face " << i << ": adjacent to face " << ( *j ).adjacent << "\n";
+					globalOutputStream() << "Brush::buildWindings: face " << i << ": adjacent to face " << ( *j ).adjacent << '\n';
 #endif
 					// remove unidirectional graph edges
 					if ( ( *j ).adjacent == c_brush_maxFaces
 					  || Winding_FindAdjacent( m_faces[( *j ).adjacent]->getWinding(), i ) == c_brush_maxFaces ) {
 #if BRUSH_CONNECTIVITY_DEBUG
-						globalOutputStream() << "Brush::buildWindings: face " << i << ": removing unidirectional connectivity graph edge adjacent to face " << ( *j ).adjacent << "\n";
+						globalOutputStream() << "Brush::buildWindings: face " << i << ": removing unidirectional connectivity graph edge adjacent to face " << ( *j ).adjacent << '\n';
 #endif
 						winding.erase( j );
 					}
@@ -2515,7 +2508,7 @@ private:
 				else
 				{
 #if BRUSH_CONNECTIVITY_DEBUG
-					globalOutputStream() << "face: " << i << "\n";
+					globalOutputStream() << "face: " << i << '\n';
 #endif
 					windingForClipPlane( f.getWinding(), f.plane3() );
 
@@ -3771,6 +3764,7 @@ public:
 		}
 	}
 	void gatherComponentsHighlight( std::vector<std::vector<Vector3>>& polygons, SelectionIntersection& intersection, SelectionTest& test, SelectionSystem::EComponentMode mode ) const {
+		m_brush.evaluateBRep(); // highlight() may happen right next to undo(), hence care to evaluate; normally render() triggers this beforehand
 		test.BeginMesh( localToWorld() );
 
 		switch ( mode )

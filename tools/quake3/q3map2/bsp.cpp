@@ -37,7 +37,7 @@ static bool g_autocaulk = false;
 
 static void autocaulk_write(){
 	Sys_FPrintf( SYS_VRB, "--- autocaulk_write ---\n" );
-	auto filename = StringOutputStream( 256 )( source, ".caulk" );
+	const auto filename = StringStream( source, ".caulk" );
 	Sys_Printf( "writing %s\n", filename.c_str() );
 
 	FILE* file = SafeOpenWrite( filename, "wt" );
@@ -46,6 +46,9 @@ static void autocaulk_write(){
 	ApplySurfaceParm( "slime", &fslime, NULL, NULL );
 	int flava = 0;
 	ApplySurfaceParm( "lava", &flava, NULL, NULL );
+	// many setups have nodraw shader nonsolid, including vQ3; and nondrawnonsolid also... fall back to caulk in such case
+	// it would be better to decide in Radiant, as it has configurable per game common shaders, but it has no solidity info
+	const bool nodraw_is_solid = ShaderInfoForShader( "textures/common/nodraw" )->compileFlags & C_SOLID;
 
 	for ( const brush_t& b : entities[0].brushes ) {
 		fprintf( file, "%i ", b.brushNum );
@@ -66,7 +69,7 @@ static void autocaulk_write(){
 			}
 			else if( b.compileFlags & C_TRANSLUCENT ){
 				if( contentShader->compileFlags & C_SOLID )
-					fprintf( file, "N" );
+					fprintf( file, nodraw_is_solid? "N" : "c" );
 				else
 					fprintf( file, "n" );
 			}
@@ -101,7 +104,7 @@ static void ProcessAdvertisements() {
 			bspAdvertisement_t& ad = bspAds.emplace_back();
 			ad.cellId = e.intForKey( "cellId" );
 			// copy and clear the rest of memory // check for overflow by String64
-			const auto modelKey = String64()( e.valueForKey( "model" ) );
+			const String64 modelKey( e.valueForKey( "model" ) );
 			strncpy( ad.model, modelKey, sizeof( ad.model ) );
 
 			const bspModel_t& adModel = bspModels[atoi( modelKey.c_str() + 1 )];
@@ -393,8 +396,7 @@ static void ProcessWorldModel( entity_t& e ){
 
 	/* ydnar: fog hull */
 	if ( e.read_keyvalue( value, "_foghull" ) ) {
-		const auto shader = String64()( "textures/", value );
-		MakeFogHullSurfs( shader );
+		MakeFogHullSurfs( String64( "textures/", value ) );
 	}
 
 	/* ydnar: bug 645: do flares for lights */
@@ -582,7 +584,7 @@ static void OnlyEnts( const char *filename ){
 	/* note it */
 	Sys_Printf( "--- OnlyEnts ---\n" );
 
-	auto out = StringOutputStream( 256 )( source, ".bsp" );
+	const auto out = StringStream( source, ".bsp" );
 	LoadBSPFile( out );
 
 	ParseEntities();
@@ -632,7 +634,7 @@ int BSPMain( Args& args ){
 	Sys_Printf( "--- BSP ---\n" );
 
 	doingBSP = true;
-	mapDrawSurfs = safe_calloc( sizeof( mapDrawSurface_t ) * MAX_MAP_DRAW_SURFS );
+	mapDrawSurfs = safe_calloc( sizeof( mapDrawSurface_t ) * max_map_draw_surfs );
 	numMapDrawSurfs = 0;
 
 	strClear( tempSource );
@@ -669,6 +671,10 @@ int BSPMain( Args& args ){
 		while ( args.takeArg( "-keeplights" ) ) {
 			keepLights = true;
 			Sys_Printf( "Leaving light entities on map after compile\n" );
+		}
+		while ( args.takeArg( "-keepmodels" ) ) {
+			keepModels = true;
+			Sys_Printf( "Leaving misc_model entities on map after compile\n" );
 		}
 		while ( args.takeArg( "-nodetail" ) ) {
 			Sys_Printf( "Ignoring detail brushes\n" );
@@ -875,13 +881,13 @@ int BSPMain( Args& args ){
 	SetDefaultSampleSize( sampleSize );
 
 	/* delete portal, line and surface files */
-	remove( StringOutputStream( 256 )( source, ".prt" ) );
-	remove( StringOutputStream( 256 )( source, ".lin" ) );
-	//%	remove( StringOutputStream( 256 )( source, ".srf" ) );	/* ydnar */
+	remove( StringStream( source, ".prt" ) );
+	remove( StringStream( source, ".lin" ) );
+	//%	remove( StringStream( source, ".srf" ) );	/* ydnar */
 
 	/* if we are doing a full map, delete the last saved region map */
 	if ( !path_extension_is( fileName, "reg" ) )
-		remove( StringOutputStream( 256 )( source, ".reg" ) );
+		remove( StringStream( source, ".reg" ) );
 
 	/* expand mapname */
 	StringOutputStream mapFileName( 256 );

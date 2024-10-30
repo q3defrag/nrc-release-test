@@ -98,11 +98,11 @@ const char* const c_brushPrism_name = "brushPrism";
 
 void Brush_ConstructPrism( Brush& brush, const AABB& bounds, std::size_t sides, size_t axis, const char* shader, const TextureProjection& projection ){
 	if ( sides < c_brushPrism_minSides ) {
-		globalErrorStream() << c_brushPrism_name << ": sides " << sides << ": too few sides, minimum is " << c_brushPrism_minSides << "\n";
+		globalErrorStream() << c_brushPrism_name << ": sides " << sides << ": too few sides, minimum is " << c_brushPrism_minSides << '\n';
 		return;
 	}
 	if ( sides > c_brushPrism_maxSides ) {
-		globalErrorStream() << c_brushPrism_name << ": sides " << sides << ": too many sides, maximum is " << c_brushPrism_maxSides << "\n";
+		globalErrorStream() << c_brushPrism_name << ": sides " << sides << ": too many sides, maximum is " << c_brushPrism_maxSides << '\n';
 		return;
 	}
 
@@ -166,52 +166,49 @@ const std::size_t c_brushCone_minSides = 3;
 const std::size_t c_brushCone_maxSides = c_brush_maxFaces - 1;
 const char* const c_brushCone_name = "brushCone";
 
-void Brush_ConstructCone( Brush& brush, const AABB& bounds, std::size_t sides, const char* shader, const TextureProjection& projection ){
+void Brush_ConstructCone( Brush& brush, const AABB& bounds, std::size_t sides, size_t axis, const char* shader, const TextureProjection& projection ){
 	if ( sides < c_brushCone_minSides ) {
-		globalErrorStream() << c_brushCone_name << ": sides " << sides << ": too few sides, minimum is " << c_brushCone_minSides << "\n";
+		globalErrorStream() << c_brushCone_name << ": sides " << sides << ": too few sides, minimum is " << c_brushCone_minSides << '\n';
 		return;
 	}
 	if ( sides > c_brushCone_maxSides ) {
-		globalErrorStream() << c_brushCone_name << ": sides " << sides << ": too many sides, maximum is " << c_brushCone_maxSides << "\n";
+		globalErrorStream() << c_brushCone_name << ": sides " << sides << ": too many sides, maximum is " << c_brushCone_maxSides << '\n';
 		return;
 	}
 
 	brush.clear();
 	brush.reserve( sides + 1 );
 
-	Vector3 mins( vector3_subtracted( bounds.origin, bounds.extents ) );
-	Vector3 maxs( vector3_added( bounds.origin, bounds.extents ) );
+	const Vector3 mins( bounds.origin - bounds.extents );
+	const Vector3 maxs( bounds.origin + bounds.extents );
 
-	float radius = max_extent( bounds.extents );
+	const float radius = max_extent_2d( bounds.extents, axis );
 	const Vector3& mid = bounds.origin;
+	const size_t x = ( axis + 1 ) % 3, y = ( axis + 2 ) % 3, z = axis;
 	Vector3 planepts[3];
 
-	planepts[0][0] = mins[0]; planepts[0][1] = mins[1]; planepts[0][2] = mins[2];
-	planepts[1][0] = maxs[0]; planepts[1][1] = mins[1]; planepts[1][2] = mins[2];
-	planepts[2][0] = maxs[0]; planepts[2][1] = maxs[1]; planepts[2][2] = mins[2];
+	planepts[0][x] = mins[x]; planepts[0][y] = mins[y]; planepts[0][z] = mins[z];
+	planepts[1][x] = maxs[x]; planepts[1][y] = mins[y]; planepts[1][z] = mins[z];
+	planepts[2][x] = maxs[x]; planepts[2][y] = maxs[y]; planepts[2][z] = mins[z];
 
 	brush.addPlane( planepts[0], planepts[1], planepts[2], shader, projection );
 
 	for ( std::size_t i = 0; i < sides; ++i )
 	{
-		double sv = sin( i * 3.14159265 * 2 / sides );
-		double cv = cos( i * 3.14159265 * 2 / sides );
+		const double sv = sin( i * c_2pi / sides );
+		const double cv = cos( i * c_2pi / sides );
 
-		planepts[0][0] = static_cast<float>( mid[0] + radius * cv );
-		planepts[0][1] = static_cast<float>( mid[1] + radius * sv );
-//		planepts[0][0] = static_cast<float>( floor( mid[0] + radius * cv + 0.5 ) );
-//		planepts[0][1] = static_cast<float>( floor( mid[1] + radius * sv + 0.5 ) );
-		planepts[0][2] = mins[2];
+		planepts[0][x] = mid[x] + radius * cv;
+		planepts[0][y] = mid[y] + radius * sv;
+		planepts[0][z] = mins[z];
 
-		planepts[1][0] = mid[0];
-		planepts[1][1] = mid[1];
-		planepts[1][2] = maxs[2];
+		planepts[1][x] = mid[x];
+		planepts[1][y] = mid[y];
+		planepts[1][z] = maxs[z];
 
-		planepts[2][0] = static_cast<float>( planepts[0][0] - radius * sv );
-		planepts[2][1] = static_cast<float>( planepts[0][1] + radius * cv );
-//		planepts[2][0] = static_cast<float>( floor( planepts[0][0] - radius * sv + 0.5 ) );
-//		planepts[2][1] = static_cast<float>( floor( planepts[0][1] + radius * cv + 0.5 ) );
-		planepts[2][2] = maxs[2];
+		planepts[2][x] = planepts[0][x] - radius * sv;
+		planepts[2][y] = planepts[0][y] + radius * cv;
+		planepts[2][z] = mins[z];
 
 		brush.addPlane( planepts[0], planepts[1], planepts[2], shader, projection );
 	}
@@ -223,11 +220,11 @@ const char* const c_brushSphere_name = "brushSphere";
 
 void Brush_ConstructSphere( Brush& brush, const AABB& bounds, std::size_t sides, const char* shader, const TextureProjection& projection ){
 	if ( sides < c_brushSphere_minSides ) {
-		globalErrorStream() << c_brushSphere_name << ": sides " << sides << ": too few sides, minimum is " << c_brushSphere_minSides << "\n";
+		globalErrorStream() << c_brushSphere_name << ": sides " << sides << ": too few sides, minimum is " << c_brushSphere_minSides << '\n';
 		return;
 	}
 	if ( sides > c_brushSphere_maxSides ) {
-		globalErrorStream() << c_brushSphere_name << ": sides " << sides << ": too many sides, maximum is " << c_brushSphere_maxSides << "\n";
+		globalErrorStream() << c_brushSphere_name << ": sides " << sides << ": too many sides, maximum is " << c_brushSphere_maxSides << '\n';
 		return;
 	}
 
@@ -276,11 +273,11 @@ const char* const c_brushRock_name = "brushRock";
 
 void Brush_ConstructRock( Brush& brush, const AABB& bounds, std::size_t sides, const char* shader, const TextureProjection& projection ){
 	if ( sides < c_brushRock_minSides ) {
-		globalErrorStream() << c_brushRock_name << ": sides " << sides << ": too few sides, minimum is " << c_brushRock_minSides << "\n";
+		globalErrorStream() << c_brushRock_name << ": sides " << sides << ": too few sides, minimum is " << c_brushRock_minSides << '\n';
 		return;
 	}
 	if ( sides > c_brushRock_maxSides ) {
-		globalErrorStream() << c_brushRock_name << ": sides " << sides << ": too many sides, maximum is " << c_brushRock_maxSides << "\n";
+		globalErrorStream() << c_brushRock_name << ": sides " << sides << ": too many sides, maximum is " << c_brushRock_maxSides << '\n';
 		return;
 	}
 
@@ -423,45 +420,41 @@ void Brush_ConstructPrefab( Brush& brush, EBrushPrefab type, const AABB& bounds,
 	case EBrushPrefab::Prism:
 		{
 			const size_t axis = GlobalXYWnd_getCurrentViewType();
-			StringOutputStream command;
-			command << c_brushPrism_name << " -sides " << sides << " -axis " << axis;
-			UndoableCommand undo( command.c_str() );
+			const auto command = StringStream<64>( c_brushPrism_name, " -sides ", sides, " -axis ", axis );
+			UndoableCommand undo( command );
 
 			Brush_ConstructPrism( brush, bounds, sides, axis, shader, projection );
 		}
 		break;
 	case EBrushPrefab::Cone:
 		{
-			StringOutputStream command;
-			command << c_brushCone_name << " -sides " << sides;
-			UndoableCommand undo( command.c_str() );
+			const size_t axis = GlobalXYWnd_getCurrentViewType();
+			const auto command = StringStream<64>( c_brushCone_name, " -sides ", sides, " -axis ", axis );
+			UndoableCommand undo( command );
 
-			Brush_ConstructCone( brush, bounds, sides, shader, projection );
+			Brush_ConstructCone( brush, bounds, sides, axis, shader, projection );
 		}
 		break;
 	case EBrushPrefab::Sphere:
 		{
-			StringOutputStream command;
-			command << c_brushSphere_name << " -sides " << sides;
-			UndoableCommand undo( command.c_str() );
+			const auto command = StringStream<64>( c_brushSphere_name, " -sides ", sides );
+			UndoableCommand undo( command );
 
 			Brush_ConstructSphere( brush, bounds, sides, shader, projection );
 		}
 		break;
 	case EBrushPrefab::Rock:
 		{
-			StringOutputStream command;
-			command << c_brushRock_name << " -sides " << sides;
-			UndoableCommand undo( command.c_str() );
+			const auto command = StringStream<64>( c_brushRock_name, " -sides ", sides );
+			UndoableCommand undo( command );
 
 			Brush_ConstructRock( brush, bounds, sides, shader, projection );
 		}
 		break;
 	case EBrushPrefab::Icosahedron:
 		{
-			StringOutputStream command;
-			command << "brushIcosahedron" << " -subdivisions " << sides;
-			UndoableCommand undo( command.c_str() );
+			const auto command = StringStream<64>( "brushIcosahedron", " -subdivisions ", sides );
+			UndoableCommand undo( command );
 
 			icosahedron::Brush_ConstructIcosahedron( brush, bounds, sides, option, shader, projection );
 		}
@@ -1150,6 +1143,9 @@ filter_brush_all_faces g_filter_brush_caulk( &g_filter_face_caulk );
 filter_face_shader_prefix g_filter_face_caulk_ja( "textures/system/caulk" );
 filter_brush_all_faces g_filter_brush_caulk_ja( &g_filter_face_caulk_ja );
 
+filter_face_shader g_filter_face_caulk_q1( "textures/skip" );
+filter_brush_all_faces g_filter_brush_caulk_q1( &g_filter_face_caulk_q1 );
+
 filter_face_flags g_filter_face_liquids( QER_LIQUID );
 filter_brush_any_face g_filter_brush_liquids( &g_filter_face_liquids );
 
@@ -1222,8 +1218,11 @@ void BrushFilters_construct(){
 		add_brush_filter( g_filter_brush_detail, EXCLUDE_DETAILS );
 		add_brush_filter( g_filter_brush_detail, EXCLUDE_STRUCTURAL, true );
 	}
-	if( string_equal( GlobalRadiant().getRequiredGameDescriptionKeyValue( "entities" ), "quake" ) )
+	if( string_equal( GlobalRadiant().getRequiredGameDescriptionKeyValue( "entities" ), "quake" ) ){
 		add_brush_filter( g_filter_brush_liquids_q1, EXCLUDE_LIQUIDS );
+		add_brush_filter( g_filter_brush_caulk_q1, EXCLUDE_CAULK );
+		add_face_filter( g_filter_face_caulk_q1, EXCLUDE_CAULK );
+	}
 	add_brush_filter( g_filter_brush_lightgrid, EXCLUDE_LIGHTGRID );
 	add_brush_filter( g_filter_brush_decals, EXCLUDE_DECALS );
 	add_brush_filter( g_filter_brush_sky, EXCLUDE_SKY );
@@ -1551,6 +1550,7 @@ void Brush_constructMenu( QMenu* menu ){
 		create_menu_item_with_mnemonic( submenu, "CSG &Subtract", "CSGSubtract" );
 		create_menu_item_with_mnemonic( submenu, "CSG &Merge", "CSGMerge" );
 		create_menu_item_with_mnemonic( submenu, "CSG &Wrap Merge", "CSGWrapMerge" );
+		create_menu_item_with_mnemonic( submenu, "CSG &Intersect", "CSGIntersect" );
 		create_menu_item_with_mnemonic( submenu, "Make &Room", "CSGroom" );
 		create_menu_item_with_mnemonic( submenu, "CSG &Tool", "CSGTool" );
 	}

@@ -35,7 +35,7 @@
 #include "gtkmisc.h"
 #include "mainframe.h"
 
-#include <QTextEdit>
+#include <QPlainTextEdit>
 #include <QContextMenuEvent>
 
 // handle to the console log file
@@ -56,11 +56,10 @@ void Sys_LogFile( bool enable ){
 		// open a file to log the console (if user prefs say so)
 		// the file handle is g_hLogFile
 		// the log file is erased
-		StringOutputStream name( 256 );
-		name << SettingsPath_get() << "radiant.log";
-		g_hLogFile = fopen( name.c_str(), "w" );
+		const auto name = StringStream( SettingsPath_get(), "radiant.log" );
+		g_hLogFile = fopen( name, "w" );
 		if ( g_hLogFile != 0 ) {
-			globalOutputStream() << "Started logging to " << name.c_str() << "\n";
+			globalOutputStream() << "Started logging to " << name << '\n';
 			time_t localtime;
 			time( &localtime );
 			globalOutputStream() << "Today is: " << ctime( &localtime )
@@ -75,21 +74,21 @@ void Sys_LogFile( bool enable ){
 		// settings say we should not be logging but still we have an active logfile .. close it
 		time_t localtime;
 		time( &localtime );
-		globalOutputStream() << "Closing log file at " << ctime( &localtime ) << "\n";
+		globalOutputStream() << "Closing log file at " << ctime( &localtime ) << '\n';
 		fclose( g_hLogFile );
 		g_hLogFile = 0;
 	}
 }
 
-QTextEdit* g_console = 0;
+QPlainTextEdit* g_console = 0;
 
-class QTextEdit_console : public QTextEdit
+class QPlainTextEdit_console : public QPlainTextEdit
 {
 protected:
 	void contextMenuEvent( QContextMenuEvent *event ) override {
 		QMenu *menu = createStandardContextMenu();
 		QAction *action = menu->addAction( "Clear" );
-		connect( action, &QAction::triggered, this, &QTextEdit::clear );
+		connect( action, &QAction::triggered, this, &QPlainTextEdit::clear );
 		menu->exec( event->globalPos() );
 		delete menu;
 	}
@@ -97,10 +96,9 @@ protected:
 
 
 QWidget* Console_constructWindow(){
-	QTextEdit *text = new QTextEdit_console();
+	QPlainTextEdit *text = new QPlainTextEdit_console();
 	text->setReadOnly( true );
 	text->setUndoRedoEnabled( false );
-	text->setAcceptRichText( false );
 	text->setMinimumHeight( 10 );
 	text->setFocusPolicy( Qt::FocusPolicy::NoFocus );
 
@@ -120,9 +118,9 @@ QWidget* Console_constructWindow(){
 
 class GtkTextBufferOutputStream : public TextOutputStream
 {
-	QTextEdit* textBuffer;
+	QPlainTextEdit* textBuffer;
 public:
-	GtkTextBufferOutputStream( QTextEdit* textBuffer ) : textBuffer( textBuffer ) {
+	GtkTextBufferOutputStream( QPlainTextEdit* textBuffer ) : textBuffer( textBuffer ) {
 	}
 	std::size_t
 #ifdef __GNUC__
@@ -151,22 +149,43 @@ std::size_t Sys_Print( int level, const char* buf, std::size_t length ){
 	}
 
 	if ( level != SYS_NOCON ) {
-		if ( g_console != 0 ) {
-			g_console->moveCursor( QTextCursor::End ); // must go before setTextColor()
-
+#ifndef WIN32
+		{  // on linux/macos log also to terminal
 			switch ( level )
 			{
 			case SYS_WRN:
-				g_console->setTextColor( QColor( 255, 127, 0 ) );
-				break;
 			case SYS_ERR:
-				g_console->setTextColor( QColor( 255, 0, 0 ) );
+				write( 2, buf, length );
 				break;
 			case SYS_STD:
 			case SYS_VRB:
 			default:
-				g_console->setTextColor( g_console->palette().text().color() );
+				write( 1, buf, length );
 				break;
+			}
+		}
+#endif
+
+		if ( g_console != 0 ) {
+			g_console->moveCursor( QTextCursor::End ); // must go before setCurrentCharFormat() & insertPlainText()
+
+			{
+				QTextCharFormat format = g_console->currentCharFormat();
+				switch ( level )
+				{
+				case SYS_WRN:
+					format.setForeground( QColor( 255, 127, 0 ) );
+					break;
+				case SYS_ERR:
+					format.setForeground( QColor( 255, 0, 0 ) );
+					break;
+				case SYS_STD:
+				case SYS_VRB:
+				default:
+					format.clearForeground();
+					break;
+				}
+				g_console->setCurrentCharFormat( format );
 			}
 
 			{
@@ -195,44 +214,26 @@ std::size_t Sys_Print( int level, const char* buf, std::size_t length ){
 }
 
 
-class SysPrintOutputStream : public TextOutputStream
+template<int level>
+class SysPrintStream : public TextOutputStream
 {
 public:
 	std::size_t write( const char* buffer, std::size_t length ){
-		return Sys_Print( SYS_STD, buffer, length );
+		return Sys_Print( level, buffer, length );
 	}
 };
-
-class SysPrintErrorStream : public TextOutputStream
-{
-public:
-	std::size_t write( const char* buffer, std::size_t length ){
-		return Sys_Print( SYS_ERR, buffer, length );
-	}
-};
-
-class SysPrintWarningStream : public TextOutputStream
-{
-public:
-	std::size_t write( const char* buffer, std::size_t length ){
-		return Sys_Print( SYS_WRN, buffer, length );
-	}
-};
-
-SysPrintOutputStream g_outputStream;
 
 TextOutputStream& getSysPrintOutputStream(){
-	return g_outputStream;
+	static SysPrintStream<SYS_STD> stream;
+	return stream;
 }
-
-SysPrintWarningStream g_warningStream;
 
 TextOutputStream& getSysPrintWarningStream(){
-	return g_warningStream;
+	static SysPrintStream<SYS_WRN> stream;
+	return stream;
 }
 
-SysPrintErrorStream g_errorStream;
-
 TextOutputStream& getSysPrintErrorStream(){
-	return g_errorStream;
+	static SysPrintStream<SYS_ERR> stream;
+	return stream;
 }

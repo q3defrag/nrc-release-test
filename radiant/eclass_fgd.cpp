@@ -63,7 +63,7 @@ void EntityClassFGD_clear(){
 EntityClass* EntityClassFGD_insertUniqueBase( EntityClass* entityClass ){
 	std::pair<BaseClasses::iterator, bool> result = g_EntityClassFGD_bases.insert( BaseClasses::value_type( entityClass->name(), entityClass ) );
 	if ( !result.second ) {
-		globalErrorStream() << "duplicate base class: " << makeQuoted( entityClass->name() ) << "\n";
+		globalErrorStream() << "duplicate base class: " << makeQuoted( entityClass->name() ) << '\n';
 		//eclass_capture_state(entityClass);
 		//entityClass->free(entityClass);
 	}
@@ -74,7 +74,7 @@ EntityClass* EntityClassFGD_insertUnique( EntityClass* entityClass ){
 	EntityClassFGD_insertUniqueBase( entityClass );
 	std::pair<EntityClasses::iterator, bool> result = g_EntityClassFGD_classes.insert( EntityClasses::value_type( entityClass->name(), entityClass ) );
 	if ( !result.second ) {
-		globalErrorStream() << "duplicate entity class: " << makeQuoted( entityClass->name() ) << "\n";
+		globalErrorStream() << "duplicate entity class: " << makeQuoted( entityClass->name() ) << '\n';
 		eclass_capture_state( entityClass );
 		entityClass->free( entityClass );
 	}
@@ -120,7 +120,7 @@ void EntityClassFGD_parseSplitString( Tokeniser& tokeniser, CopiedString& string
 		buffer << tokeniser.getToken();
 		if ( !string_equal( tokeniser.getToken(), "+" ) ) {
 			tokeniser.ungetToken();
-			string = buffer.c_str();
+			string = buffer;
 			return;
 		}
 	}
@@ -186,7 +186,7 @@ void EntityClassFGD_parseClass( Tokeniser& tokeniser, bool fixedsize, bool isBas
 		}
 		else if ( string_equal( property, "iconsprite" ) ) {
 			ASSERT_MESSAGE( EntityClassFGD_parseToken( tokeniser, "(" ), PARSE_ERROR );
-			entityClass->m_modelpath = StringOutputStream( 256 )( PathCleaned( tokeniser.getToken() ) ).c_str();
+			entityClass->m_modelpath = StringStream<64>( PathCleaned( tokeniser.getToken() ) );
 			ASSERT_MESSAGE( EntityClassFGD_parseToken( tokeniser, ")" ), PARSE_ERROR );
 		}
 		else if ( string_equal( property, "sprite" )
@@ -335,12 +335,8 @@ void EntityClassFGD_parseClass( Tokeniser& tokeniser, bool fixedsize, bool isBas
 		ASSERT_MESSAGE( EntityClassFGD_parseToken( tokeniser, ")" ), PARSE_ERROR );
 
 		if ( string_equal_nocase( type.c_str(), "flags" ) ) {
-			EntityClassAttribute attribute;
-
 			ASSERT_MESSAGE( EntityClassFGD_parseToken( tokeniser, "=" ), PARSE_ERROR );
-			tokeniser.nextLine();
 			ASSERT_MESSAGE( EntityClassFGD_parseToken( tokeniser, "[" ), PARSE_ERROR );
-			tokeniser.nextLine();
 			for (;; )
 			{
 				const char* flag = tokeniser.getToken();
@@ -350,9 +346,16 @@ void EntityClassFGD_parseClass( Tokeniser& tokeniser, bool fixedsize, bool isBas
 				}
 				else
 				{
+					const size_t bit = std::log2( atoi( flag ) );
+					ASSERT_MESSAGE( bit < MAX_FLAGS, "invalid flag bit" << PARSE_ERROR );
+					ASSERT_MESSAGE( string_empty( entityClass->flagnames[bit] ), "non-unique flag bit" << PARSE_ERROR );
+
 					ASSERT_MESSAGE( EntityClassFGD_parseToken( tokeniser, ":" ), PARSE_ERROR );
-					//const char* name =
-					tokeniser.getToken();
+
+					const char* name = tokeniser.getToken();
+					strncpy( entityClass->flagnames[bit], name, std::size( entityClass->flagnames[bit] ) - 1 );
+					EntityClassAttribute *attribute = &EntityClass_insertAttribute( *entityClass, name, EntityClassAttribute( "flag", name ) ).second;
+					entityClass->flagAttributes[bit] = attribute;
 					{
 						const char* defaultSeparator = tokeniser.getToken();
 						if ( string_equal( defaultSeparator, ":" ) ) {
@@ -360,7 +363,7 @@ void EntityClassFGD_parseClass( Tokeniser& tokeniser, bool fixedsize, bool isBas
 							{
 								const char* descriptionSeparator = tokeniser.getToken();
 								if ( string_equal( descriptionSeparator, ":" ) ) {
-									EntityClassFGD_parseSplitString( tokeniser, attribute.m_description );
+									EntityClassFGD_parseSplitString( tokeniser, attribute->m_description );
 								}
 								else
 								{
@@ -376,7 +379,6 @@ void EntityClassFGD_parseClass( Tokeniser& tokeniser, bool fixedsize, bool isBas
 				}
 				tokeniser.nextLine();
 			}
-			EntityClass_insertAttribute( *entityClass, key.c_str(), attribute );
 		}
 		else if ( string_equal_nocase( type.c_str(), "choices" ) ) {
 			EntityClassAttribute attribute;
@@ -413,9 +415,8 @@ void EntityClassFGD_parseClass( Tokeniser& tokeniser, bool fixedsize, bool isBas
 			ASSERT_MESSAGE( EntityClassFGD_parseToken( tokeniser, "[" ), PARSE_ERROR );
 			tokeniser.nextLine();
 
-			StringOutputStream listTypeName( 64 );
-			listTypeName << entityClass->name() << "_" << attribute.m_name;
-			attribute.m_type = listTypeName.c_str();
+			const auto listTypeName = StringStream<64>( entityClass->name(), '_', key );
+			attribute.m_type = listTypeName;
 
 			ListAttributeType& listType = g_listTypesFGD[listTypeName.c_str()];
 
@@ -461,6 +462,7 @@ void EntityClassFGD_parseClass( Tokeniser& tokeniser, bool fixedsize, bool isBas
 		       || string_equal_nocase( type.c_str(), "studio" )
 		       || string_equal_nocase( type.c_str(), "sprite" )
 		       || string_equal_nocase( type.c_str(), "color255" )
+		       || string_equal_nocase( type.c_str(), "color1" )
 		       || string_equal_nocase( type.c_str(), "target_source" )
 		       || string_equal_nocase( type.c_str(), "target_destination" )
 		       || string_equal_nocase( type.c_str(), "sound" )
@@ -487,6 +489,9 @@ void EntityClassFGD_parseClass( Tokeniser& tokeniser, bool fixedsize, bool isBas
 			const char* attributeType = "string";
 			if ( string_equal_nocase( type.c_str(), "studio" ) ) {
 				attributeType = "model";
+			}
+			else if ( string_equal_nocase( type.c_str(), "color1" ) ) {
+				attributeType = "color";
 			}
 
 			EntityClassAttribute attribute;
@@ -566,7 +571,7 @@ void EntityClassFGD_parse( TextInputStream& inputStream, const char* path ){
 		}
 		// hl2 below
 		else if ( string_equal( blockType, "@include" ) ) {
-			EntityClassFGD_loadFile( StringOutputStream( 256 )( PathFilenameless( path ), tokeniser.getToken() ).c_str() );
+			EntityClassFGD_loadFile( StringStream( PathFilenameless( path ), tokeniser.getToken() ) );
 		}
 		else if ( string_equal( blockType, "@mapsize" ) ) {
 			ASSERT_MESSAGE( EntityClassFGD_parseToken( tokeniser, "(" ), PARSE_ERROR );
@@ -590,7 +595,7 @@ void EntityClassFGD_parse( TextInputStream& inputStream, const char* path ){
 void EntityClassFGD_loadFile( const char* filename ){
 	TextFileInputStream file( filename );
 	if ( !file.failed() ) {
-		globalOutputStream() << "parsing entity classes from " << makeQuoted( filename ) << "\n";
+		globalOutputStream() << "parsing entity classes from " << makeQuoted( filename ) << '\n';
 
 		EntityClassFGD_parse( file, filename );
 	}
@@ -631,7 +636,7 @@ void EntityClassFGD_resolveInheritance( EntityClass* derivedClass ){
 		{
 			BaseClasses::iterator i = g_EntityClassFGD_bases.find( ( *j ).c_str() );
 			if ( i == g_EntityClassFGD_bases.end() ) {
-				globalErrorStream() << "failed to find entityDef " << makeQuoted( ( *j ).c_str() ) << " inherited by "  << makeQuoted( derivedClass->name() ) << "\n";
+				globalErrorStream() << "failed to find entityDef " << makeQuoted( ( *j ).c_str() ) << " inherited by "  << makeQuoted( derivedClass->name() ) << '\n';
 			}
 			else
 			{
@@ -651,6 +656,13 @@ void EntityClassFGD_resolveInheritance( EntityClass* derivedClass ){
 				{
 					EntityClass_insertAttribute( *derivedClass, ( *k ).first.c_str(), ( *k ).second );
 				}
+
+				for( size_t flag = 0; flag < MAX_FLAGS; ++flag ){
+					if( !string_empty( parentClass->flagnames[flag] ) && string_empty( derivedClass->flagnames[flag] ) ){
+						strncpy( derivedClass->flagnames[flag], parentClass->flagnames[flag], std::size( derivedClass->flagnames[flag] ) - 1 );
+						derivedClass->flagAttributes[flag] = parentClass->flagAttributes[flag];
+					}
+				}
 			}
 		}
 	}
@@ -667,8 +679,8 @@ public:
 		if ( --m_unrealised == 0 ) {
 
 			{
-				const auto baseDirectory = StringOutputStream( 256 )( GlobalRadiant().getGameToolsPath(), GlobalRadiant().getRequiredGameDescriptionKeyValue( "basegame" ), '/' );
-				const auto gameDirectory = StringOutputStream( 256 )( GlobalRadiant().getGameToolsPath(), GlobalRadiant().getGameName(), '/' );
+				const auto baseDirectory = StringStream( GlobalRadiant().getGameToolsPath(), GlobalRadiant().getRequiredGameDescriptionKeyValue( "basegame" ), '/' );
+				const auto gameDirectory = StringStream( GlobalRadiant().getGameToolsPath(), GlobalRadiant().getGameName(), '/' );
 
 				const auto pathLess = []( const CopiedString& one, const CopiedString& other ){
 					return path_less( one.c_str(), other.c_str() );
@@ -688,7 +700,7 @@ public:
 				}
 
 				for( const auto& [ name, path ] : name_path ){
-					EntityClassFGD_loadFile( StringOutputStream()( path, name ) );
+					EntityClassFGD_loadFile( StringStream( path, name ) );
 				}
 			}
 

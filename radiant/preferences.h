@@ -75,11 +75,11 @@ public:
 	void appendRadioIcons( const char* name, int& data, StringArrayRange icons ){
 		m_dialog.addRadioIcons( m_grid, name, data, icons );
 	}
-	void appendEntry( const char* name, const StringImportCallback& importCallback, const StringExportCallback& exportCallback ){
-		m_dialog.addTextEntry( m_grid, name, importCallback, exportCallback );
+	QWidget* appendEntry( const char* name, const StringImportCallback& importCallback, const StringExportCallback& exportCallback ){
+		return m_dialog.addTextEntry( m_grid, name, importCallback, exportCallback );
 	}
-	void appendEntry( const char* name, CopiedString& data ){
-		m_dialog.addEntry( m_grid, name, data );
+	QWidget* appendEntry( const char* name, CopiedString& data ){
+		return m_dialog.addEntry( m_grid, name, data );
 	}
 	void appendPathEntry( const char* name, bool browse_directory, const StringImportCallback& importCallback, const StringExportCallback& exportCallback ){
 		m_dialog.addPathEntry( m_grid, name, browse_directory, importCallback, exportCallback );
@@ -93,11 +93,11 @@ public:
 	QWidget* appendSpinner( const char* name, int lower, int upper, const IntImportCallback& importCallback, const IntExportCallback& exportCallback ){
 		return m_dialog.addSpinner( m_grid, name, lower, upper, importCallback, exportCallback );
 	}
-	QWidget* appendSpinner( const char* name, double lower, double upper, const FloatImportCallback& importCallback, const FloatExportCallback& exportCallback ){
-		return m_dialog.addSpinner( m_grid, name, lower, upper, importCallback, exportCallback );
+	QWidget* appendSpinner( const char* name, double lower, double upper, const FloatImportCallback& importCallback, const FloatExportCallback& exportCallback, int decimals = 2 ){
+		return m_dialog.addSpinner( m_grid, name, lower, upper, importCallback, exportCallback, decimals );
 	}
-	QWidget* appendSpinner( const char* name, float& data, double lower, double upper ){
-		return m_dialog.addSpinner( m_grid, name, data, lower, upper );
+	QWidget* appendSpinner( const char* name, float& data, double lower, double upper, int decimals = 2 ){
+		return m_dialog.addSpinner( m_grid, name, data, lower, upper, decimals );
 	}
 };
 

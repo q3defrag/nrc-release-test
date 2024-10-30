@@ -36,7 +36,6 @@
 #include <cstdlib>
 
 #include "stream/stringstream.h"
-#include "convert.h"
 #include "gtkutil/dialog.h"
 #include "gtkutil/entry.h"
 #include "gtkutil/image.h"
@@ -45,7 +44,7 @@
 #include "gtkmisc.h"
 
 #include <QCheckBox>
-#include <QComboBox>
+#include "gtkutil/combobox.h"
 #include <QSlider>
 #include <QRadioButton>
 #include <QButtonGroup>
@@ -411,7 +410,7 @@ QCheckBox* Dialog::addCheckBox( QGridLayout* grid, const char* name, const char*
 }
 
 QComboBox* Dialog::addCombo( QGridLayout* grid, const char* name, StringArrayRange values, const IntImportCallback& importViewer, const IntExportCallback& exportViewer ){
-	auto combo = new QComboBox;
+	auto combo = new ComboBox;
 
 	for ( const char *value : values )
 		combo->addItem( value );
@@ -478,11 +477,12 @@ void Dialog::addRadioIcons( QGridLayout* grid, const char* name, int& data, Stri
 	addRadioIcons( grid, name, icons, IntImportCaller( data ), IntExportCaller( data ) );
 }
 
-void Dialog::addTextEntry( QGridLayout* grid, const char* name, const StringImportCallback& importViewer, const StringExportCallback& exportViewer ){
+QWidget* Dialog::addTextEntry( QGridLayout* grid, const char* name, const StringImportCallback& importViewer, const StringExportCallback& exportViewer ){
 	auto entry = new QLineEdit;
 	AddTextEntryData( *entry, importViewer, exportViewer );
 
 	DialogGrid_packRow( grid, entry, name );
+	return entry;
 }
 
 void Dialog::addPathEntry( QGridLayout* grid, const char* name, bool browse_directory, const StringImportCallback& importViewer, const StringExportCallback& exportViewer ){
@@ -514,14 +514,14 @@ QWidget* Dialog::addSpinner( QGridLayout* grid, const char* name, int& data, int
 	return addSpinner( grid, name, lower, upper, IntImportCallback( IntImportCaller( data ) ), IntExportCallback( IntExportCaller( data ) ) );
 }
 
-QWidget* Dialog::addSpinner( QGridLayout* grid, const char* name, double lower, double upper, const FloatImportCallback& importViewer, const FloatExportCallback& exportViewer ){
-	auto spin = new DoubleSpinBox( lower, upper );
+QWidget* Dialog::addSpinner( QGridLayout* grid, const char* name, double lower, double upper, const FloatImportCallback& importViewer, const FloatExportCallback& exportViewer, int decimals ){
+	auto spin = new DoubleSpinBox( lower, upper, 0, decimals );
 	spin->setStepType( QAbstractSpinBox::StepType::AdaptiveDecimalStepType );
 	AddFloatSpinnerData( *spin, importViewer, exportViewer );
 	DialogGrid_packRow( grid, spin, new SpinBoxLabel( name, spin ) );
 	return spin;
 }
 
-QWidget* Dialog::addSpinner( QGridLayout* grid, const char* name, float& data, double lower, double upper ){
-	return addSpinner( grid, name, lower, upper, FloatImportCallback( FloatImportCaller( data ) ), FloatExportCallback( FloatExportCaller( data ) ) );
+QWidget* Dialog::addSpinner( QGridLayout* grid, const char* name, float& data, double lower, double upper, int decimals ){
+	return addSpinner( grid, name, lower, upper, FloatImportCallback( FloatImportCaller( data ) ), FloatExportCallback( FloatExportCaller( data ) ), decimals );
 }

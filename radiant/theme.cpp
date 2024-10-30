@@ -19,7 +19,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-#include <QStyleFactory>
+#include <QStyle>
 #include <QApplication>
 #include <QMenu>
 #include <QActionGroup>
@@ -45,7 +45,13 @@ void theme_set( ETheme theme ){
 //	QSettings settings( "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", QSettings::NativeFormat );
 //	if( settings.value( "AppsUseLightTheme" ) == 0 )
 #endif
-	static const QPalette default_palette = qApp->palette();
+	static struct
+	{
+		bool is1stThemeApplication = true; // guard to not apply possibly wrong defaults while app is started with Default theme
+		const QPalette palette = qApp->palette();
+		const QString style = qApp->style()->objectName();
+	}
+	defaults;
 
 	const char* sheet = R"(
 	QToolTip {
@@ -53,42 +59,106 @@ void theme_set( ETheme theme ){
 		background-color: #4D4F4B;
 		border: 1px solid white;
 	}
+
 	QScrollBar:vertical {
+		background: rgb( 73, 74, 71 );
+		border: 0px solid grey;
 		width: 7px;
+		margin: 0px 0px 0px 0px;
 	}
+	QScrollBar::handle:vertical {
+		border: 1px solid gray;
+		background: rgb( 111, 105, 100 );
+		min-height: 20px;
+	}
+	QScrollBar::add-line:vertical {
+		border: 0px solid grey;
+		background: #32CC99;
+		height: 0px;
+		subcontrol-position: bottom;
+		subcontrol-origin: margin;
+	}
+	QScrollBar::sub-line:vertical {
+		border: 0px solid grey;
+		background: #32CC99;
+		height: 0px;
+		subcontrol-position: top;
+		subcontrol-origin: margin;
+	}
+
 	QScrollBar:horizontal {
+		background: rgb( 73, 74, 71 );
+		border: 0px solid grey;
 		height: 7px;
+		margin: 0px 0px 0px 0px;
 	}
+	QScrollBar::handle:horizontal {
+		border: 1px solid gray;
+		background: rgb( 111, 105, 100 );
+		min-width: 20px;
+	}
+	QScrollBar::add-line:horizontal {
+		border: 0px solid grey;
+		background: #32CC99;
+		width: 0px;
+		subcontrol-position: right;
+		subcontrol-origin: margin;
+	}
+	QScrollBar::sub-line:horizontal {
+		border: 0px solid grey;
+		background: #32CC99;
+		width: 0px;
+		subcontrol-position: left;
+		subcontrol-origin: margin;
+	}
+
+	QScrollBar::handle:hover {
+		background: rgb( 250, 203, 129 );
+	}
+
 	QToolBar::separator:horizontal {
 		width: 1px;
 		margin: 3px 1px;
 		background-color: #aaaaaa;
 	}
-
 	QToolBar::separator:vertical {
 		height: 1px;
 		margin: 1px 3px;
 		background-color: #aaaaaa;
 	}
 	QToolButton {
-	    padding: 0;
+		padding: 0;
 		margin: 0;
+	}
+
+	QMenu::separator {
+		background: rgb( 93, 94, 91 );
+		height: 1px;
+		margin-top: 3px;
+		margin-bottom: 3px;
+		margin-left: 5px;
+		margin-right: 7px;
 	}
 	)";
 
 	if( theme == ETheme::Default ){
-		qApp->setPalette( default_palette );
+		if( !defaults.is1stThemeApplication ){
+			qApp->setPalette( defaults.palette );
+			qApp->setStyleSheet( QString() );
+			qApp->setStyle( defaults.style );
+		}
 	}
 	else if( theme == ETheme::Dark ){
-		qApp->setStyle( QStyleFactory::create( "Fusion" ) );
+		qApp->setStyle( "Fusion" );
 		QPalette darkPalette;
-		QColor darkColor = QColor( 83, 84, 81 );
-		QColor disabledColor = QColor( 127, 127, 127 );
+		const QColor darkColor = QColor( 83, 84, 81 );
+		const QColor disabledColor = QColor( 127, 127, 127 );
+		const QColor baseColor( 46, 52, 54 );
 		darkPalette.setColor( QPalette::Window, darkColor );
 		darkPalette.setColor( QPalette::WindowText, Qt::white );
 		darkPalette.setColor( QPalette::Disabled, QPalette::WindowText, disabledColor );
-		darkPalette.setColor( QPalette::Base, QColor( 46, 52, 54 ) );
-		darkPalette.setColor( QPalette::AlternateBase, darkColor );
+		darkPalette.setColor( QPalette::Base, baseColor );
+		darkPalette.setColor( QPalette::AlternateBase, baseColor.darker( 130 ) );
 		darkPalette.setColor( QPalette::ToolTipBase, Qt::white );
 		darkPalette.setColor( QPalette::ToolTipText, Qt::white );
 		darkPalette.setColor( QPalette::Text, Qt::white );
@@ -109,14 +179,15 @@ void theme_set( ETheme theme ){
 		qApp->setStyleSheet( sheet );
 	}
 	else if( theme == ETheme::Darker ){
-		qApp->setStyle( QStyleFactory::create( "Fusion" ) );
+		qApp->setStyle( "Fusion" );
 		QPalette darkPalette;
-		QColor darkColor = QColor( 45, 45, 45 );
-		QColor disabledColor = QColor( 127, 127, 127 );
+		const QColor darkColor = QColor( 45, 45, 45 );
+		const QColor disabledColor = QColor( 127, 127, 127 );
+		const QColor baseColor( 18, 18, 18 );
 		darkPalette.setColor( QPalette::Window, darkColor );
 		darkPalette.setColor( QPalette::WindowText, Qt::white );
-		darkPalette.setColor( QPalette::Base, QColor( 18, 18, 18 ) );
-		darkPalette.setColor( QPalette::AlternateBase, darkColor );
+		darkPalette.setColor( QPalette::Base, baseColor );
+		darkPalette.setColor( QPalette::AlternateBase, baseColor.darker( 130 ) );
 		darkPalette.setColor( QPalette::ToolTipBase, Qt::white );
 		darkPalette.setColor( QPalette::ToolTipText, Qt::white );
 		darkPalette.setColor( QPalette::Text, Qt::white );
@@ -135,6 +206,8 @@ void theme_set( ETheme theme ){
 
 		qApp->setStyleSheet( sheet );
 	}
+
+	defaults.is1stThemeApplication = false;
 }
 
 void theme_contruct_menu( class QMenu *menu ){

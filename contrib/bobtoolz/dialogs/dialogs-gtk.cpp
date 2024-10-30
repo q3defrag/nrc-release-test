@@ -41,8 +41,8 @@
 #include <QButtonGroup>
 #include <QRadioButton>
 #include <QFrame>
-#include <QComboBox>
 #include "gtkutil/spinbox.h"
+#include "gtkutil/combobox.h"
 
 
 /*--------------------------------
@@ -210,7 +210,7 @@ bool DoBuildStairsBox( BuildStairsRS* rs ){
 		}
 		{
 			form->addWidget( check_detail = new QCheckBox( "Use Detail Brushes" ) );
-			QObject::connect( group_style, QOverload<int>::of( &QButtonGroup::buttonClicked ), [check_detail]( int id ){
+			QObject::connect( group_style, &QButtonGroup::idClicked, [check_detail]( int id ){
 				check_detail->setEnabled( id == STYLE_BOB );
 			} );
 			check_detail->setEnabled( false );
@@ -258,7 +258,7 @@ bool DoDoorsBox( DoorRS* rs ){
 		auto form = new QFormLayout( &dialog );
 		form->setSizeConstraint( QLayout::SizeConstraint::SetFixedSize );
 		{
-			form->addRow( "Door Front/Back Texture", comboMain = new QComboBox );
+			form->addRow( "Door Front/Back Texture", comboMain = new ComboBox );
 			char buffer[256];
 			comboMain->addItems( LoadListStore( GetFilename( buffer, "bt/door-tex.txt" ) ) );
 			comboMain->setEditable( true );
@@ -272,7 +272,7 @@ bool DoDoorsBox( DoorRS* rs ){
 			checkScaleMainV->setChecked( true );
 		}
 		{
-			form->addRow( "Door Trim Texture", comboTrim = new QComboBox );
+			form->addRow( "Door Trim Texture", comboTrim = new ComboBox );
 			char buffer[256];
 			comboTrim->addItems( LoadListStore( GetFilename( buffer, "bt/door-tex-trim.txt" ) ) );
 			comboTrim->setEditable( true );

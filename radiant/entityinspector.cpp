@@ -38,20 +38,20 @@
 #include <QSplitter>
 #include <QTreeWidget>
 #include <QHeaderView>
-#include <QTextEdit>
+#include <QPlainTextEdit>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QScrollArea>
 #include <QCheckBox>
-#include <QLineEdit>
+#include "gtkutil/lineedit.h"
 #include <QLabel>
 #include <QPushButton>
 #include <QToolButton>
 #include <QKeyEvent>
 #include <QApplication>
 #include <QButtonGroup>
-#include <QComboBox>
+#include "gtkutil/combobox.h"
 
 #include "os/path.h"
 #include "eclasslib.h"
@@ -60,7 +60,6 @@
 #include "os/file.h"
 #include "stream/stringstream.h"
 #include "moduleobserver.h"
-#include "convert.h"
 #include "stringio.h"
 
 #include "gtkutil/accelerator.h"
@@ -104,9 +103,8 @@ const char* SelectedEntity_getValueForKey( const char* key ){
 }
 
 void Scene_EntitySetKeyValue_Selected_Undoable( const char* key, const char* value ){
-	StringOutputStream command( 256 );
-	command << "entitySetKeyValue -key " << makeQuoted( key ) << " -value " << makeQuoted( value );
-	UndoableCommand undo( command.c_str() );
+	const auto command = StringStream( "entitySetKeyValue -key ", makeQuoted( key ), " -value ", makeQuoted( value ) );
+	UndoableCommand undo( command );
 	Scene_EntitySetKeyValue_Selected( key, value );
 }
 
@@ -209,7 +207,7 @@ public:
 	ColorAttribute( const char* key ) :
 		m_key( key ),
 		m_entry( new NonModalEntry( ApplyCaller( *this ), UpdateCaller( *this ) ) ){
-		auto button = m_entry->addAction( QApplication::style()->standardIcon( QStyle::SP_DialogOkButton ), QLineEdit::ActionPosition::TrailingPosition );
+		auto button = m_entry->addAction( QApplication::style()->standardIcon( QStyle::SP_ArrowRight ), QLineEdit::ActionPosition::TrailingPosition );
 		QObject::connect( button, &QAction::triggered, [this](){ browse(); } );
 	}
 	void release() override {
@@ -247,7 +245,7 @@ public:
 	ModelAttribute( const char* key ) :
 		m_key( key ),
 		m_entry( new NonModalEntry( ApplyCaller( *this ), UpdateCaller( *this ) ) ){
-		auto button = m_entry->addAction( QApplication::style()->standardIcon( QStyle::SP_FileDialogStart ), QLineEdit::ActionPosition::TrailingPosition );
+		auto button = m_entry->addAction( QApplication::style()->standardIcon( QStyle::SP_DialogOpenButton ), QLineEdit::ActionPosition::TrailingPosition );
 		QObject::connect( button, &QAction::triggered, [this](){ browse(); } );
 	}
 	void release() override {
@@ -275,7 +273,7 @@ public:
 };
 
 const char* browse_sound( QWidget* parent, const char* filepath ){
-	StringOutputStream buffer( 1024 );
+	StringOutputStream buffer( 256 );
 
 	if( !string_empty( filepath ) ){
 		const char* root = GlobalFileSystem().findFile( filepath );
@@ -285,14 +283,13 @@ const char* browse_sound( QWidget* parent, const char* filepath ){
 	if( buffer.empty() ){
 		buffer << g_qeglobals.m_userGamePath << "sound/";
 
-		if ( !file_readable( buffer.c_str() ) ) {
+		if ( !file_readable( buffer ) ) {
 			// just go to fsmain
-			buffer.clear();
-			buffer << g_qeglobals.m_userGamePath;
+			buffer( g_qeglobals.m_userGamePath );
 		}
 	}
 
-	const char* filename = file_dialog( parent, true, "Open Sound File", buffer.c_str(), "sound" );
+	const char* filename = file_dialog( parent, true, "Open Sound File", buffer, "sound" );
 	if ( filename != 0 ) {
 		const char* relative = path_make_relative( filename, GlobalFileSystem().findRoot( filename ) );
 		if ( relative == filename ) {
@@ -388,17 +385,15 @@ public:
 		return m_hbox;
 	}
 	void apply(){
-		StringOutputStream angle( 32 );
-		angle << angle_normalised( entry_get_float( m_entry ) );
-		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), angle.c_str() );
+		const auto angle = StringStream<32>( angle_normalised( entry_get_float( m_entry ) ) );
+		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), angle );
 	}
 	typedef MemberCaller<AngleAttribute, &AngleAttribute::apply> ApplyCaller;
 
 	void update() override {
 		const char* value = SelectedEntity_getValueForKey( m_key.c_str() );
 		if ( !string_empty( value ) ) {
-			StringOutputStream angle( 32 );
-			angle << angle_normalised( atof( value ) );
+			const auto angle = StringStream<32>( angle_normalised( atof( value ) ) );
 			m_entry->setText( angle.c_str() );
 		}
 		else
@@ -433,7 +428,7 @@ public:
 		static_cast<QHBoxLayout*>( m_hbox->layout() )->addLayout( m_radio.m_hbox );
 		m_hbox->layout()->addWidget( m_entry );
 		m_hbox->layout()->addWidget( m_butt.m_button );
-		QObject::connect( m_radio.m_radio, QOverload<int>::of( &QButtonGroup::buttonClicked ), ApplyRadioCaller( *this ) );
+		QObject::connect( m_radio.m_radio, &QButtonGroup::idClicked, ApplyRadioCaller( *this ) );
 	}
 	void release() override {
 		delete this;
@@ -442,9 +437,8 @@ public:
 		return m_hbox;
 	}
 	void apply(){
-		StringOutputStream angle( 32 );
-		angle << angle_normalised( entry_get_float( m_entry ) );
-		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), angle.c_str() );
+		const auto angle = StringStream<32>( angle_normalised( entry_get_float( m_entry ) ) );
+		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), angle );
 	}
 	typedef MemberCaller<DirectionAttribute, &DirectionAttribute::apply> ApplyCaller;
 
@@ -466,8 +460,7 @@ public:
 			{
 				m_entry->setEnabled( true );
 				m_radio.m_radio->button( 2 )->setChecked( true );
-				StringOutputStream angle( 32 );
-				angle << angle_normalised( f );
+				const auto angle = StringStream<32>( angle_normalised( f ) );
 				m_entry->setText( angle.c_str() );
 			}
 		}
@@ -533,22 +526,21 @@ public:
 		return m_hbox;
 	}
 	void apply(){
-		StringOutputStream angles( 64 );
-		angles << angle_normalised( entry_get_float( m_angles.m_pitch ) )
-		       << " " << angle_normalised( entry_get_float( m_angles.m_yaw ) )
-		       << " " << angle_normalised( entry_get_float( m_angles.m_roll ) );
-		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), angles.c_str() );
+		const auto angles = StringStream<64>( angle_normalised( entry_get_float( m_angles.m_pitch ) ),
+		                                 ' ', angle_normalised( entry_get_float( m_angles.m_yaw ) ),
+		                                 ' ', angle_normalised( entry_get_float( m_angles.m_roll ) ) );
+		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), angles );
 	}
 	typedef MemberCaller<AnglesAttribute, &AnglesAttribute::apply> ApplyCaller;
 
 	void update() override {
-		StringOutputStream angle( 32 );
 		const char* value = SelectedEntity_getValueForKey( m_key.c_str() );
 		if ( !string_empty( value ) ) {
 			DoubleVector3 pitch_yaw_roll;
 			if ( !string_parse_vector3( value, pitch_yaw_roll ) ) {
 				pitch_yaw_roll = DoubleVector3( 0, 0, 0 );
 			}
+			StringOutputStream angle( 32 );
 
 			angle( angle_normalised( pitch_yaw_roll.x() ) );
 			m_angles.m_pitch->setText( angle.c_str() );
@@ -607,22 +599,21 @@ public:
 		return m_hbox;
 	}
 	void apply(){
-		StringOutputStream vector3( 64 );
-		vector3 << entry_get_float( m_vector3.m_x )
-		        << " " << entry_get_float( m_vector3.m_y )
-		        << " " << entry_get_float( m_vector3.m_z );
-		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), vector3.c_str() );
+		const auto vector3 = StringStream<64>( entry_get_float( m_vector3.m_x ),
+		                                  ' ', entry_get_float( m_vector3.m_y ),
+		                                  ' ', entry_get_float( m_vector3.m_z ) );
+		Scene_EntitySetKeyValue_Selected_Undoable( m_key.c_str(), vector3 );
 	}
 	typedef MemberCaller<Vector3Attribute, &Vector3Attribute::apply> ApplyCaller;
 
 	void update() override {
-		StringOutputStream buffer( 32 );
 		const char* value = SelectedEntity_getValueForKey( m_key.c_str() );
 		if ( !string_empty( value ) ) {
 			DoubleVector3 x_y_z;
 			if ( !string_parse_vector3( value, x_y_z ) ) {
 				x_y_z = DoubleVector3( 0, 0, 0 );
 			}
+			StringOutputStream buffer( 32 );
 
 			buffer( x_y_z.x() );
 			m_vector3.m_x->setText( buffer.c_str() );
@@ -651,7 +642,7 @@ class ListAttribute final : public EntityAttribute
 public:
 	ListAttribute( const char* key, const ListAttributeType& type ) :
 		m_key( key ),
-		m_combo( new QComboBox ),
+		m_combo( new ComboBox ),
 		m_type( type ){
 		for ( const auto&[ name, value ] : type )
 		{
@@ -691,7 +682,7 @@ namespace
 bool g_entityInspector_windowConstructed = false;
 
 QTreeWidget* g_entityClassList;
-QTextEdit* g_entityClassComment;
+QPlainTextEdit* g_entityClassComment;
 
 QCheckBox* g_entitySpawnflagsCheck[MAX_FLAGS];
 
@@ -814,6 +805,12 @@ void SetComment( EntityClass* eclass ){
 	}
 
 	g_current_comment = eclass;
+
+	if( eclass == nullptr ){
+		g_entityClassComment->clear();
+		return;
+	}
+
 	g_entityClassComment->setPlainText( eclass->comments() );
 
 	{	// Catch patterns like "\nstuff :" used to describe keys and spawnflags, and make them bold for readability.
@@ -850,7 +847,7 @@ void SpawnFlags_setEntityClass( EntityClass* eclass ){
 	// do a first pass to count the spawn flags, don't touch the widgets, we don't know in what state they are
 	for ( int i = 0; i < MAX_FLAGS; i++ )
 	{
-		if ( eclass->flagnames[i][0] != 0 && strcmp( eclass->flagnames[i],"-" ) ) {
+		if ( !string_empty( eclass->flagnames[i] ) ) {
 			spawn_table[g_spawnflag_count++] = i;
 		}
 		// hide all boxes
@@ -859,7 +856,7 @@ void SpawnFlags_setEntityClass( EntityClass* eclass ){
 
 	for ( int i = 0; i < g_spawnflag_count; ++i )
 	{
-		const auto str = StringOutputStream( 16 )( LowerCase( eclass->flagnames[spawn_table[i]] ) );
+		const auto str = StringStream<16>( LowerCase( eclass->flagnames[spawn_table[i]] ) );
 
 		QCheckBox *check = g_entitySpawnflagsCheck[i];
 		check->setText( str.c_str() );
@@ -872,10 +869,13 @@ void SpawnFlags_setEntityClass( EntityClass* eclass ){
 }
 
 void EntityClassList_selectEntityClass( EntityClass* eclass ){
-	auto list = g_entityClassList->findItems( eclass->name(), Qt::MatchFlag::MatchFixedString );
-	if( !list.isEmpty() ){
-		g_entityClassList->setCurrentItem( list.first() );
-	}
+	const auto list = g_entityClassList->findItems( eclass->name(), Qt::MatchFlag::MatchFixedString );
+	g_entityClassList->setCurrentItem( !list.isEmpty()
+	                                   ? list.first()
+	                                   : nullptr );
+	// g_entityClassComment is only updated via g_entityClassList selection change
+	// using special nullprt case to also update it on selection of unknown entity added during runtime
+	// hence this->EntityClassList_selection_changed()->SetComment() must handle nullptr
 }
 
 void EntityInspector_appendAttribute( const EntityClassAttributePair& attributePair, EntityAttribute& attribute ){
@@ -947,6 +947,7 @@ void EntityInspector_setEntityClass( EntityClass *eclass ){
 			delete item->widget();
 			delete item;
 		}
+		g_attributeBox->update(); // trigger scrollbar update
 		GlobalEntityAttributes_clear();
 
 		for ( const EntityClassAttributePair &pair : eclass->m_attributes )
@@ -981,12 +982,12 @@ void EntityInspector_applySpawnflags(){
 		f |= v << spawn_table[i];
 	}
 
-	char sz[32];
-	sprintf( sz, "%i", f );
-	const char* value = ( f == 0 ) ? "" : sz;
+	char value[32] = {};
+	if( f != 0 )
+		sprintf( value, "%i", f );
 
 	{
-		const auto command = StringOutputStream( 64 )( "entitySetSpawnflags -flags ", f );
+		const auto command = StringStream<64>( "entitySetSpawnflags -flags ", f );
 		UndoableCommand undo( command );
 
 		Scene_EntitySetKeyValue_Selected( "spawnflags", value );
@@ -1048,11 +1049,18 @@ void EntityInspector_applyKeyValue(){
 //		return;
 //	}
 
-	// RR2DO2: we don't want spaces in entity keys
-	if ( strstr( key.constData(), " " ) ) {
-		qt_MessageBox( g_entityKeyEntry->window(), "No spaces are allowed in entity key names." );
+	// RR2DO2: we don't want spaces and special symbols in entity keys
+	if ( std::any_of( key.cbegin(), key.cend(), []( const char c ){ return strchr( " \n\r\t\v\"", c ) != nullptr; } ) ) {
+		qt_MessageBox( g_entityKeyEntry->window(), "No spaces, newlines, tabs, quotes are allowed in entity key names." );
 		return;
 	}
+	if ( std::any_of( value.cbegin(), value.cend(), []( const char c ){ return strchr( "\n\r\"", c ) != nullptr; } ) ) {
+		qt_MessageBox( g_entityKeyEntry->window(), "No newlines & quotes are allowed in entity key values." );
+		return;
+	}
+	// avoid empty key name; empty value is okay: deletes key
+	if( key.isEmpty() )
+		return;
 
 	if ( string_equal( key.constData(), "classname" ) ) {
 		Scene_EntitySetClassname_Selected( value.constData() );
@@ -1069,8 +1077,8 @@ void EntityInspector_clearKeyValue(){
 		const auto key = item->text( 0 ).toLatin1();
 
 		if ( !string_equal( key.constData(), "classname" ) ) {
-			const auto command = StringOutputStream( 64 )( "entityDeleteKey -key ", key.constData() );
-			UndoableCommand undo( command.c_str() );
+			const auto command = StringStream<64>( "entityDeleteKey -key ", key.constData() );
+			UndoableCommand undo( command );
 			Scene_EntitySetKeyValue_Selected( key.constData(), "" );
 		}
 	}
@@ -1108,9 +1116,9 @@ void EntityInspector_clearAllKeyValues(){
 // callbacks
 
 static void EntityClassList_selection_changed( QTreeWidgetItem *current, QTreeWidgetItem *previous ){
-	if( current != nullptr ){
-		SetComment( current->data( 0, Qt::ItemDataRole::UserRole ).value<EntityClass*>() );
-	}
+	SetComment( current != nullptr
+	            ? current->data( 0, Qt::ItemDataRole::UserRole ).value<EntityClass*>()
+	            : nullptr );
 }
 
 static void EntityProperties_selection_changed( QTreeWidgetItem *item, int column ){
@@ -1136,6 +1144,13 @@ protected:
 			 || keyEvent->key() == Qt::Key_PageDown ){
 				event->accept();
 			}
+		}
+		// clear focus widget while showing to keep global shortcuts working
+		else if( event->type() == QEvent::Show ) {
+			QTimer::singleShot( 0, [obj](){
+				if( static_cast<QWidget*>( obj )->focusWidget() != nullptr )
+					static_cast<QWidget*>( obj )->focusWidget()->clearFocus();
+			} );
 		}
 		return QObject::eventFilter( obj, event ); // standard event processing
 	}
@@ -1178,10 +1193,9 @@ QWidget* EntityInspector_constructWindow( QWidget* toplevel ){
 		splitter->addWidget( tree );
 	}
 	{
-		auto text = g_entityClassComment = new QTextEdit;
+		auto text = g_entityClassComment = new QPlainTextEdit;
 		text->setReadOnly( true );
 		text->setUndoRedoEnabled( false );
-		text->setAcceptRichText( false );
 
 		splitter->addWidget( text );
 	}
@@ -1223,19 +1237,20 @@ QWidget* EntityInspector_constructWindow( QWidget* toplevel ){
 		{
 			// key/value entry
 			auto grid = new QGridLayout;
+			grid->setContentsMargins( 4, 0, 4, 0 );
 			vbox->addLayout( grid );
 			{
 				grid->addWidget( new QLabel( "Key" ), 0, 0 );
 				grid->addWidget( new QLabel( "Value" ), 1, 0 );
 			}
 			{
-				auto line = g_entityKeyEntry = new QLineEdit;
+				auto line = g_entityKeyEntry = new LineEdit;
 				grid->addWidget( line, 0, 1 );
 				QObject::connect( line, &QLineEdit::returnPressed, [](){ g_entityValueEntry->setFocus(); g_entityValueEntry->selectAll(); } );
 			}
 
 			{
-				auto line = g_entityValueEntry = new QLineEdit;
+				auto line = g_entityValueEntry = new LineEdit;
 				grid->addWidget( line, 1, 1 );
 				QObject::connect( line, &QLineEdit::returnPressed, [](){ EntityInspector_applyKeyValue(); } );
 			}
@@ -1270,6 +1285,7 @@ QWidget* EntityInspector_constructWindow( QWidget* toplevel ){
 		}
 		{
 			auto hbox = new QHBoxLayout;
+			hbox->setContentsMargins( 4, 0, 4, 0 );
 			vbox->addLayout( hbox );
 			{
 				auto b = new QPushButton( "Clear All" );

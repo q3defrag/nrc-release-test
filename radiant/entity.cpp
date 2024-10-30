@@ -171,12 +171,12 @@ void Scene_EntitySetKeyValue_Selected( const char* key, const char* value ){
 
 void Scene_EntitySetClassname_Selected( const char* classname ){
 	if ( GlobalSelectionSystem().countSelected() > 0 ) {
-		StringOutputStream command;
+		StringOutputStream command( 64 );
 		if( string_equal( classname, "worldspawn" ) )
 			command << "ungroupSelectedEntities";
 		else
 			command << "entitySetClass -class " << classname;
-		UndoableCommand undo( command.c_str() );
+		UndoableCommand undo( command );
 		GlobalSceneGraph().traverse( EntitySetClassnameSelected( classname ) );
 	}
 }
@@ -306,9 +306,8 @@ void Entity_moveSelectedPrimitives( bool toLast ){
 	scene::Node& node = ( !Node_isEntity( path.top() ) && path.size() > 1 )? path.parent() : path.top();
 
 	if ( Node_isEntity( node ) && node_is_group( node ) ) {
-		StringOutputStream command;
-		command << "movePrimitivesToEntity " << makeQuoted( Node_getEntity( node )->getClassName() );
-		UndoableCommand undo( command.c_str() );
+		const auto command = StringStream<64>( "movePrimitivesToEntity ", makeQuoted( Node_getEntity( node )->getClassName() ) );
+		UndoableCommand undo( command );
 		Scene_parentSelectedBrushesToEntity( GlobalSceneGraph(), node );
 	}
 }
@@ -394,9 +393,8 @@ void Entity_createFromSelection( const char* name, const Vector3& origin ){
 	}
 #endif
 
-	StringOutputStream command;
-	command << "entityCreate -class " << name;
-	UndoableCommand undo( command.c_str() );
+	const auto command = StringStream<64>( "entityCreate -class ", name );
+	UndoableCommand undo( command );
 
 	EntityClass* entityClass = GlobalEntityClassManager().findOrInsert( name, true );
 
@@ -484,13 +482,9 @@ void Entity_createFromSelection( const char* name, const Vector3& origin ){
 			}
 		}
 		else if ( brushesSelected ) { // use workzone to set light position/size for doom3 lights, if there are brushes selected
-			AABB bounds( Doom3Light_getBounds( workzone ) );
-			StringOutputStream key( 64 );
-			key << bounds.origin[0] << " " << bounds.origin[1] << " " << bounds.origin[2];
-			entity->setKeyValue( "origin", key.c_str() );
-			key.clear();
-			key << bounds.extents[0] << " " << bounds.extents[1] << " " << bounds.extents[2];
-			entity->setKeyValue( "light_radius", key.c_str() );
+			const AABB bounds( Doom3Light_getBounds( workzone ) );
+			entity->setKeyValue( "origin", StringStream<64>( bounds.origin[0], ' ', bounds.origin[1], ' ', bounds.origin[2] ) );
+			entity->setKeyValue( "light_radius", StringStream<64>( bounds.extents[0], ' ', bounds.extents[1], ' ', bounds.extents[2] ) );
 		}
 	}
 
@@ -509,13 +503,11 @@ void Entity_ungroupSelectedPrimitives(){
 
 /* scale color so that at least one component is at 1.0F */
 void NormalizeColor( Vector3& color ){
-	const std::size_t maxi = vector3_max_abs_component_index( color );
-	if ( color[maxi] == 0.f )
+	const auto max = vector3_max_component( color );
+	if ( max == 0 )
 		color = Vector3( 1, 1, 1 );
-	else{
-		const float max = color[maxi];
+	else
 		color /= max;
-	}
 }
 
 void Entity_normalizeColor(){
@@ -540,9 +532,8 @@ void Entity_normalizeColor(){
 					                             g_entity_globals.color_entity[1],
 					                             g_entity_globals.color_entity[2] );
 
-					StringOutputStream command( 256 );
-					command << "entityNormalizeColour " << buffer;
-					UndoableCommand undo( command.c_str() );
+					const auto command = StringStream<64>( "entityNormalizeColour ", buffer );
+					UndoableCommand undo( command );
 					Scene_EntitySetKeyValue_Selected( "_color", buffer );
 				}
 			}
@@ -573,9 +564,8 @@ void Entity_setColour(){
 				                             g_entity_globals.color_entity[1],
 				                             g_entity_globals.color_entity[2] );
 
-				StringOutputStream command( 256 );
-				command << "entitySetColour " << buffer;
-				UndoableCommand undo( command.c_str() );
+				const auto command = StringStream<64>( "entitySetColour ", buffer );
+				UndoableCommand undo( command );
 				Scene_EntitySetKeyValue_Selected( "_color", buffer );
 			}
 		}
@@ -583,7 +573,7 @@ void Entity_setColour(){
 }
 
 const char* misc_model_dialog( QWidget* parent, const char* filepath ){
-	StringOutputStream buffer( 1024 );
+	StringOutputStream buffer( 256 );
 
 	if( !string_empty( filepath ) ){
 		const char* root = GlobalFileSystem().findFile( filepath );
@@ -593,14 +583,13 @@ const char* misc_model_dialog( QWidget* parent, const char* filepath ){
 	if( buffer.empty() ){
 		buffer << g_qeglobals.m_userGamePath << "models/";
 
-		if ( !file_readable( buffer.c_str() ) ) {
+		if ( !file_readable( buffer ) ) {
 			// just go to fsmain
-			buffer.clear();
-			buffer << g_qeglobals.m_userGamePath;
+			buffer( g_qeglobals.m_userGamePath );
 		}
 	}
 
-	const char *filename = file_dialog( parent, true, "Choose Model", buffer.c_str(), ModelLoader::Name );
+	const char *filename = file_dialog( parent, true, "Choose Model", buffer, ModelLoader::Name );
 	if ( filename != 0 ) {
 		// use VFS to get the correct relative path
 		const char* relative = path_make_relative( filename, GlobalFileSystem().findRoot( filename ) );
@@ -668,11 +657,11 @@ typedef ReferenceCaller1<EntityCreator, const BoolImportCallback&, ShowTargetNam
 
 
 void Entity_constructPreferences( PreferencesPage& page ){
-	page.appendSpinner(	"Names Display Distance (3D)", 0.0, 200500.0,
+	page.appendSpinner(	"Names Display Distance (3D)", 0, 200500,
 	                    IntImportCallback( ShowNamesDistImportCaller( GlobalEntityCreator() ) ),
 	                    IntExportCallback( ShowNamesDistExportCaller( GlobalEntityCreator() ) )
 	                  );
-	page.appendSpinner(	"Names Display Ratio (2D)", 0.0, 100500.0,
+	page.appendSpinner(	"Names Display Ratio (2D)", 0, 100500,
 	                    IntImportCallback( ShowNamesRatioImportCaller( GlobalEntityCreator() ) ),
 	                    IntExportCallback( ShowNamesRatioExportCaller( GlobalEntityCreator() ) )
 	                  );
@@ -701,9 +690,15 @@ void ToggleShowLightRadii(){
 	UpdateAllWindows();
 }
 
+inline bool game_has_killConnect(){
+	return g_pGameDescription->mGameType == "nexuiz"
+	    || g_pGameDescription->mGameType == "xonotic"
+	    || g_pGameDescription->mGameType == "q1";
+}
+
 void Entity_constructMenu( QMenu* menu ){
 	create_menu_item_with_mnemonic( menu, "&Connect Entities", "EntitiesConnect" );
-	if ( g_pGameDescription->mGameType == "nexuiz" || g_pGameDescription->mGameType == "q1" ) {
+	if ( game_has_killConnect() ) {
 		create_menu_item_with_mnemonic( menu, "&KillConnect Entities", "EntitiesKillConnect" );
 	}
 	create_menu_item_with_mnemonic( menu, "&Move Primitives to Entity", "EntityMovePrimitivesToLast" );
@@ -726,7 +721,7 @@ void Entity_Construct(){
 	GlobalCommands_insert( "EntityColorSet", FreeCaller<Entity_setColour>(), QKeySequence( "K" ) );
 	GlobalCommands_insert( "EntityColorNormalize", FreeCaller<Entity_normalizeColor>() );
 	GlobalCommands_insert( "EntitiesConnect", FreeCaller<Entity_connectSelected>(), QKeySequence( "Ctrl+K" ) );
-	if ( g_pGameDescription->mGameType == "nexuiz" || g_pGameDescription->mGameType == "q1" )
+	if ( game_has_killConnect() )
 		GlobalCommands_insert( "EntitiesKillConnect", FreeCaller<Entity_killconnectSelected>(), QKeySequence( "Shift+K" ) );
 	GlobalCommands_insert( "EntityMovePrimitivesToLast", FreeCaller<Entity_moveSelectedPrimitivesToLast>(), QKeySequence( "Ctrl+M" ) );
 	GlobalCommands_insert( "EntityMovePrimitivesToFirst", FreeCaller<Entity_moveSelectedPrimitivesToFirst>() );
