@@ -1,3 +1,0 @@
-LIBRARY	"meshtex"
-EXPORTS
-	Radiant_RegisterModules @1
